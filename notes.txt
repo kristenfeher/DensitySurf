@@ -1,0 +1,13 @@
+# create new project directory
+# poetry new project name
+# cd into directory
+# python -m venv .venv/
+# poetry add numpy (etc) (automatically activates enviroment - otherwise do source .venv/bin/activate if not using poetry)
+# poetry build 
+
+# steps to install umap-learn:
+# poetry add numpy scipy
+# poetry add scikit-learn 
+# poetry add numpy^1.22 
+# poetry add numba
+# poetry add umap-learn
