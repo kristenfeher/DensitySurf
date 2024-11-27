@@ -32,9 +32,11 @@ import pickle
 __all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
 def spherical_transform(X):
+    """Helper function to normlise a vector to length one"""
     return(X/np.sqrt(np.sum(np.square(X))))
 
 def NPN(I, ind, dist, rho):
+    """Helper function for NN_density_cluster"""
     j = rho[ind[I, 1:]] > rho[I]
     if np.sum(j) > 0:
         argmin = np.argmin(dist[I, 1:][j])
@@ -42,7 +44,24 @@ def NPN(I, ind, dist, rho):
     else:
         return -1
 
-def NN_density_cluster(coords: pd.DataFrame, K_nn):
+def NN_density_cluster(coords: pd.DataFrame, K_nn: int):
+    """Density gradient clustering using a nearest neighbours approximation
+
+    Parameters
+    ----------
+    coords : pd.DataFrame
+        DataFrame containing data to be clustered. The rows are the observations to be clustered. 
+    
+    K_nn : int
+        The number of nearest neighbours used to construct the density approximation.
+
+    Returns
+    -------
+    list
+        The first element of the list is the cluster membership of the input DataFrame rows.
+        The second element of the list are the highest density points of each cluster.
+    """
+
     K_nn = K_nn + 1
     NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1)
     NN.fit(coords)
@@ -76,9 +95,11 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn):
     return(list((subcluster_membership, exemplars)))
 
 def veclen(x):
+    """A helper function to obtain the length of a vector"""
     return(np.sqrt(np.sum(np.square(x))))
 
 def var_expl(P_svd, i): # variance explained over rows, columns
+    """A helper function to obtain vector lengths in a matrix decomposition"""
     s0 = P_svd[0][:, 0:i]
     s1 = P_svd[1][0:i]
     s2 = P_svd[2][0:i, :]
@@ -88,6 +109,7 @@ def var_expl(P_svd, i): # variance explained over rows, columns
     return([Lcol, Lrow])
 
 def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
+    """A helper function to create matrix from saved matrix decomposition"""
     if not pickle:
         s0 = pd.read_csv(path_name + 'svd0.txt.gz')
         s1 = pd.read_csv(path_name + 'svd1.txt')
@@ -108,6 +130,7 @@ def reconstruct(path_name, pickle = False): # give option to use pickled Transfo
     return(P)
 
 def directory_structure(path, force = False):
+    """A function to create an output directory structure"""
     if not os.path.isdir(path + 'output/'):
         os.mkdir(path + 'output/')
     if not os.path.isdir(path + 'output/transform'):
@@ -137,6 +160,23 @@ def directory_structure(path, force = False):
             raise FileExistsError("Directories already contain results. \nYou will overwrite these results if you proceed. \nPlease create a new parent directory or use force = True")
       
 def MultiSampleConcat(path_names, sample_ids = None): # give option to just use exemplar cells # give warning in docs that columns with duplicated names are deleted
+    """A function to concatenate transformed samples.
+    
+    Parameters
+    ----------
+    path_names : list
+        A list of strings with path names of matrix decomposition location
+    sample_ids : list
+        An optional list of strings with sample labels to include in DataFrame index
+
+    Returns
+    -------
+
+    pd.DataFrame
+        A DataFrame with concatenated samples
+
+    """
+    
     P = [reconstruct(p) for p in path_names]
 
     colnames = [list(p.columns[~p.columns.duplicated()]) for p in P]
@@ -153,7 +193,7 @@ def MultiSampleConcat(path_names, sample_ids = None): # give option to just use 
     P = pd.concat(P)
     return(P)
 
-def Workflow(                
+def Workflow(                   
         input_dataframe: pd.DataFrame, # input count matrix
         input_data_path: str, # location of input_dataframe
         output_parent_directory: str, # location of directory structure
@@ -208,6 +248,117 @@ def Workflow(
         neighbourhood_flow_R_output: bool = True, 
         neighbourhood_flow_pickle_output: bool = True
         ):
+        """A workflow function to automate sample processing. 
+
+        Use the defaults to create all the outputs in a fresh directory. 
+        There are many parameter options for finer-grained control but consider these experimental at this stage. 
+        
+        Parameters
+        ----------
+        input_dataframe : pd.DataFrame
+            input count DataFrame
+        input_data_path : str
+            location of input_dataframe, to include in output documentation
+        output_parent_directory : str
+            location of directory structure, where to save output
+        ncomps : int 
+            input parameter for Transform. Default is 50
+        n_iter : int
+            input parameter for Transform. Default is 100
+        cell_K_nn : int 
+            input parameter for Cluster. Default is 10
+        cell_clus_steps : int
+            input parameter for Cluster. Default is 1000
+        gene_K_nn : int
+            input parameter for Cluster. Default is 10
+        gene_clus_steps : int
+            input parameter for Cluster. Default is 1000
+        similarity_threshold : float
+            input parameter for SpecificityNetwork. Default is 0.2
+        neighbourhood_flow_K_nn : int
+            input parameter for NeighbourhoodFlow. Default is 5
+        dist_thres : float
+            input parameter for NeighbourhoodFlow. Default is 10000
+        cell_join_id : str
+            input parameter for NeighbourhoodFlow. Default is 'cell_id'
+        XY : pd.DataFrame = None
+            input parameter for NeighbourhoodFlow.  
+
+        new_directory_structure : bool
+            Boolean indicating whether to create new output directory structure. Default is True
+        overwrite_directory_structure : bool
+            Boolean indicating whether to overwrite existing output directory structure. Default is False. 
+        transform : bool = True
+            Boolean indicating whether to create new instance of Transform class. Default is True. 
+        transform_pickle_path : str 
+            String indicating path of previously saved instance of Transform class. Default is None. 
+        umap : bool 
+            Boolean indicating whether to create umaps in instance of Transform class. Default is True. 
+        umap_ncomp_gene : int
+            Integer indicating whether to create umap on subset of components. Default is None and all components are used. 
+        umap_ncomp_cell : int
+            Integer indicating whether to create umap on subset of components. Default is None and all components are used. 
+        transform_goodness_of_fit : bool = True
+            Boolean indicating whether to create goodness of fit statistics. Default is True. 
+        transform_overwrite : bool = False
+            Boolean indicating whether to overwrite existing results. Used as a safeguard against accidents. Default is False. 
+        transform_R_output : bool
+            Boolean indicating whether to save R-friendly output. Default is True. 
+        transform_pickle_output : bool = True
+            Boolean indicating whether to pickle the Transform class instance. Default is True. 
+
+        cluster_cells : bool
+            Boolean indicating whether to cluster the Transform class instance. Default is True. 
+        cluster_cells_subdirectory : str = None,
+            String indicating whether to create a subdirectory in the standard output directory structure. 
+            Used to create clustering with multiple parameter settings. Default is None. 
+        cluster_cells_overwrite : bool 
+            Boolean indicating whether to overwrite existing results. Used as a safeguard against accidents. Default is False.
+        cluster_cells_pickle_path : str
+            String indicating path of previously saved instance of Cluster class. Default is None. 
+        cluster_cells_R_output : bool
+            Boolean indicating whether to save R-friendly output. Default is True.
+        cluster_cells_pickle_output : bool
+            Boolean indicating whether to pickle the Cluster class instance. Default is True.
+
+        cluster_genes : bool
+            Boolean indicating whether to cluster the Transform class instance. Default is True.
+        cluster_genes_subdirectory : str
+            String indicating whether to create a subdirectory in the standard output directory structure. 
+            Used to create clustering with multiple parameter settings. Default is None. 
+        cluster_genes_overwrite : bool
+            Boolean indicating whether to overwrite existing results. Used as a safeguard against accidents. Default is False.
+        cluster_genes_pickle_path : str
+            String indicating path of previously saved instance of Transform class. Default is None. 
+        cluster_genes_R_output : bool
+            Boolean indicating whether to save R-friendly output. Default is True.
+        cluster_genes_pickle_output : bool
+            Boolean indicating whether to pickle the Cluster class instance. Default is True.
+
+        specificity_network : bool= True
+            Boolean indicating whether to create a specificity network. Default is True.
+        specificity_network_subdirectory : str
+            String indicating whether to create a subdirectory in the standard output directory structure. 
+            Used to create specificity networks with multiple parameter settings. Default is None. 
+        specificity_network_overwrite : bool
+            Boolean indicating whether to overwrite existing results. Used as a safeguard against accidents. Default is False.
+        specificity_network_R_output : bool
+            Boolean indicating whether to save R-friendly output. Default is True.
+        specificity_network_pickle_output : bool
+            Boolean indicating whether to pickle the SpecificityNetwork class instance. Default is True.
+
+        neighbourhood_flow : bool = False, # control arguments for NeighbourhoodFlow
+        neighbourhood_flow_subdirectory : str 
+            String indicating whether to create a subdirectory in the standard output directory structure. 
+            Used to create neighbourhood flows with multiple parameter settings. Default is None. 
+        neighbourhood_flow_overwrite : bool
+            Boolean indicating whether to overwrite existing results. Used as a safeguard against accidents. Default is False.
+        neighbourhood_flow_R_output : bool
+            Boolean indicating whether to save R-friendly output. Default is True.
+        neighbourhood_flow_pickle_output : bool
+            Boolean indicating whether to pickle the NeighbourhoodFlow class instance. Default is True.
+
+        """
 
         if new_directory_structure: 
             directory_structure(output_parent_directory, overwrite_directory_structure)
@@ -403,8 +554,54 @@ def Workflow(
 
 ##############################################
 class Transform:
+    """
+    A class to transform and perform matrix decomposition
+
+    Attributes
+    ---------- 
+    col_keep
+        columns with sums != 0
+    row_keep
+        rows with sums != 0
+    svd0, svd1, svd2 : nd.array
+        left singular vectors, singular values, right singular vectors respectively
+    gene_coord : pd.DataFrame
+        Spherically transformed, dimension reduced gene coordinates
+    cell_coord : pd.DataFrame
+        Spherically transformed, dimension reduced cell coordinates
+    gof_cell : pd.DataFrame
+        Goodness of fit statistics
+    gof_gene : pd.DataFrame
+        Goodness of fit statistics
+    cell_umap : pd.DataFrame
+        umap of cell_coord
+    gene_umap : pd.DataFrame
+        umap of gene_coord
+
+    Methods
+    -------
+    umap(cell = True, gene = True, ncomp_cell:int = None, ncomp_gene:int = None)
+        Creates a umap from cell_coord and/or gene_coord
+    save(path, svd = True, cell_coord = True, gene_coord = True, cell_umap = True, gene_umap = True, goodness_of_fit = True)
+        Saves output in R-friendly format
+    """
+
     def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 100, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
-        
+        """
+        Parameters
+        ----------
+        input_dataframe : pd.DataFrame
+            The input count matrix. Rows are cells (or sampling units) and columns are genes (or biomarkers/features)
+        ncomps : int
+            The number of singular value components to compute. Default is 50
+        n_iter : int
+            The number of iterations to use in the randomised singular value decomposition. Default is 100. 
+        transform : bool
+            Boolean indicating whether to perform the Correspondence Analysis transformation before SVD. Default is True. 
+        goodness_of_fit : bool
+            Boolean indicating whether to create goodness of fit statistics. 
+        """
+
         self.col_names = input_dataframe.columns
         self.row_names = input_dataframe.index
   
@@ -473,6 +670,24 @@ class Transform:
         self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
     def umap(self, cell = True, gene = True, ncomp_cell:int = None, ncomp_gene:int = None):
+        """
+        Peforms umap on cell_coord and /or gene_coord
+
+        Parameters
+        ----------
+        cell : bool
+            Boolean indicating whether to perform umap on cell_coord. Default is True
+        gene : bool
+            Boolean indicating whether to perform umap on gene_coord. Default is True
+        ncomp_cell : int
+            Integer less than number of rows in cell_coord, indicating to perform umap on top ncomp_cell components. 
+            Default is None and corresponds to using all components. 
+        ncomp_gene : int
+            Integer less than number of rows in gene_coord, indicating to perform umap on top ncomp_gene components. 
+            Default is None and corresponds to using all components. 
+
+        """
+
         # gene and cell umap coordinates
         if cell:
             reducer = umap.UMAP()
@@ -507,6 +722,26 @@ class Transform:
              gene_umap = True, 
              goodness_of_fit = True
              ):
+        """
+        Save R-friendly output
+
+        Parameters
+        ----------
+        path : str
+            String indicating path to save directory
+        svd : bool
+            Boolean indicating whether to save SVD output. Default is True
+        cell_coord : bool
+            Boolean indicating whether to save cell_coord output. Default is True
+        gene_coord : bool
+            Boolean indicating whether to save gene_coord output. Default is True
+        cell_umap : bool
+            Boolean indicating whether to save cell_umap output. Default is True
+        gene_umap : bool
+            Boolean indicating whether to save gene_umap output. Default is True
+        goodness_of_fit : bool
+            Boolean indicating whether to save goodnes of fit output. Default is True
+        """
 
         pd.DataFrame({'row_keep':self.row_keep}, index = self.row_names).to_csv(path + 'row_keep.txt')
         pd.DataFrame({'col_keep':self.col_keep}, index = self.col_names).to_csv(path + 'col_keep.txt')
@@ -536,8 +771,41 @@ class Transform:
     
 #################################################
 class Cluster:
-    def __init__(self, coords: Transform, K_nn = 20, clus_steps = 1000, mode = 'cells', similarity_threshold = 0.2): #coords is a pd.dataframe, norm of each row should be 1. Clus_steps should be high, K_nn should be low
-        
+    """
+    A Class to cluster an instance of the Transform class
+
+    Attributes
+    ----------
+    membership_all : pd.DataFrame
+        DataFrame containing subcluster membership of each cell or gene
+    subcluster_points : pd.DataFrame
+        DataFrame containing 'exemplar points' i.e. the densest point of each cluster
+    subcluster_similarity : pd.DataFrame
+        DataFrame containing all pairwise similarities between subclusters
+
+    Methods
+    -------
+    save
+        Save R-friendly output
+    """
+
+    def __init__(self, coords: Transform, K_nn = 20, clus_steps = 1000, mode = 'cells', similarity_threshold = 0.2): 
+        """
+        Parameters
+        ----------
+        coords : Transform
+            an instance of the class Transform
+        K_nn : int
+            The number of nearest neighbours which is used to approximate local density
+        clus_steps: int
+            The number of steps to use in the walktrap clustering algorithm
+        mode : str
+            Mode is a choice of 'cells' or 'genes', indicating whether to cluster the cell_coords or gene_coords.  
+        similarity_threshold : float
+            The threshold used to create the gene/cell scaffold graph. Similarity values below the threshold are set to zero and edges are omitted. 
+            Default is 0.2
+        """
+
         K_nn = K_nn + 1
         if mode == 'cells':
             clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn)
@@ -642,6 +910,20 @@ class Cluster:
              subcluster_points = True,
              subcluster_similarity = True
              ):
+        """
+        Save R-friendly output
+        
+        Parameters
+        ----------
+        path : str
+            String indicating path to save directory
+        membership_all : bool
+            Boolean indicating whether to save membership_all output
+        subcluster_points : bool
+            Boolean indicating whether to save subcluster_points output
+        subcluster_similarity : bool
+            Boolean indicating whether to save subcluster_similarity output
+        """
 
         if membership_all:
             self.membership_all.to_csv(path + 'membership_all.txt.gz')
@@ -654,7 +936,37 @@ class Cluster:
 
 ########################################################
 class SpecificityNetwork:
+    """
+    A class used to create a Specificity Network
+
+    Attributes
+    ----------
+    bip_graph : pd.DataFrame
+        A bipartite graph representing the association between gene subclusters and cell subcluster
+    virtual_stain : pd.DataFrame
+        Creates a representative value of each gene cluster for each cell
+
+    Methods
+    -------
+    save
+        Save R-friendly output
+    """
+
     def __init__(self, coords: Transform, cells: Cluster, genes: Cluster, similarity_threshold = 0.2):
+        """
+        Parameters
+        ----------
+        coords : Transform
+            An instance of the class Transform
+        cells : Cluster
+            An instance of the class Cluster, created from argument of coords
+        genes : Cluster
+            An instance of the class Cluster, created from the argument of coords
+        similarity_threshold : float
+            The threshold used to create the bipartite graph. Similarities below this threshold are set to zero and edges are omitted
+            Default is 0.2
+
+        """
         cc = coords.cell_coord.loc[cells.subcluster_points.index]
         gc = coords.gene_coord.loc[genes.subcluster_points.index]
         cnames = ['c' + str(K) for K in cells.subcluster_points['subcluster']]
@@ -707,7 +1019,36 @@ class SpecificityNetwork:
             self.virtual_stain.to_csv(path + 'virtual_stain.txt.gz')
 
 class NeighbourhoodFlow: 
+    """
+    Class to create a neighbourhood flow, when associated spatial data exists. 
+
+    Attributes
+    ----------
+    neighbourhood_flow : pd.DataFrame
+        A matrix encoding the probability that cell subcluster A will occur in the neighbourhood of cell subcluster B
+
+    Methods
+    -------
+    save
+        Save R-friendly output    
+    """
+
     def __init__(self, cell_cluster: Cluster, XY: pd.DataFrame, K_nn: int, dist_thres: float, cell_join_id: str):
+        """
+        Parameters
+        ----------
+        cell_cluster : Cluster
+            An instance of the Cluster class
+        XY : pd.DataFrame
+            spatial X-Y coordinates of each cell in cell_cluster
+        K_nn : int
+            The number of spatial neighbours with which to create the neighbourhood_flow matrix
+        dist_thres : float
+            The maximum nearest neighbour distance that is included in the spatial neighbours
+        cell_join_id: str
+            The name of the column with cell labels in cell_cluster and XY
+        """
+
         XY = XY.join(cell_cluster.membership_all, on = cell_join_id, how = 'inner')
 
         NN = NearestNeighbors(n_neighbors = K_nn + 1, n_jobs = -1)
@@ -720,7 +1061,7 @@ class NeighbourhoodFlow:
         def func(X):
             return(X/np.sum(X))
 
-        dist_thres = 300
+        #dist_thres = 300
         ncol = dist.shape[1]
 
         for i in range(0, dist.shape[0]):
@@ -745,6 +1086,15 @@ class NeighbourhoodFlow:
         self.neighbourhood_flow = pd.DataFrame(n_mtx, index = np.unique(XY['subcluster']), columns = np.unique(XY['subcluster']))
 
     def save(self, path):
+        """
+        Save R-friendly output
+
+        Parameters
+        ----------
+        path : str
+            String indicating path to save directory
+        """
+        
         self.neighbourhood_flow.to_csv(path + 'neighbourhood_flow.txt.gz')
 
 
