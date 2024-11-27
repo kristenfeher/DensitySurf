@@ -174,6 +174,8 @@ def Workflow(
         transform: bool = True,
         transform_pickle_path: str = None,
         umap: bool = True, 
+        umap_ncomp_gene: int = None,
+        umap_ncomp_cell: int = None,
         transform_goodness_of_fit: bool = True, 
         transform_overwrite: bool = False,
         transform_R_output: bool = True,
@@ -220,7 +222,7 @@ def Workflow(
             else: 
                 Y = Transform(input_dataframe, ncomps = ncomps, n_iter = n_iter, transform = True, goodness_of_fit = False)
             if umap:
-                Y.umap()
+                Y.umap(ncomp_cell = umap_ncomp_cell, ncomp_gene = umap_ncomp_gene)
 
             if transform_R_output:
                 Y.save(path = output_parent_directory + '/output/transform/')
@@ -437,16 +439,14 @@ class Transform:
             self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
 
             self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            if transform:
-                self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-                self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-                self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
                        
             self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            if transform:
-                self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-                self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-                self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -472,18 +472,28 @@ class Transform:
         gene_coord = np.apply_along_axis(spherical_transform, 1, ca_comps)
         self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
-    def umap(self, cell = True, gene = True):
+    def umap(self, cell = True, gene = True, ncomp_cell:int = None, ncomp_gene:int = None):
         # gene and cell umap coordinates
         if cell:
             reducer = umap.UMAP()
-            cell_umap = reducer.fit_transform(self.cell_coord)
+            if ncomp_cell == None:
+                cell_umap = reducer.fit_transform(self.cell_coord)
+            elif ncomp_cell <= self.cell_coord.shape[1]:
+                cell_umap = reducer.fit_transform(self.cell_coord.iloc[:, 0:ncomp_cell])
+            else:
+                raise IndexError("ncomp_cell is larger than the number of columns in cell_coord")
             cnames = ['umap1', 'umap2']
             idx = self.row_names[self.row_keep]
             self.cell_umap = pd.DataFrame(cell_umap, index = idx, columns = cnames)
         
         if gene:
             reducer = umap.UMAP()
-            gene_umap = reducer.fit_transform(self.gene_coord)
+            if ncomp_gene == None:
+                gene_umap = reducer.fit_transform(self.gene_coord)
+            elif ncomp_gene <= self.gene_coord.shape[1]:
+                gene_umap = reducer.fit_transform(self.gene_coord[:, 0:ncomp_gene])
+            else:
+                raise IndexError("ncomp_gene is larger than the number of columns in gene_coord")
             cnames = ['umap1', 'umap2']
             idx = self.col_names[self.col_keep]
             self.gene_umap = pd.DataFrame(gene_umap, index = idx, columns = cnames)
@@ -553,10 +563,40 @@ class Cluster:
         # # betweeness, coreness and create clusters
         BT = graph.betweenness()
         CN = graph.coreness()
-        clusWT = ig.Graph.community_walktrap(graph, weights = graph.es['weight'], steps = clus_steps).as_clustering().membership
-        T.insert(0, 'clus', clusWT)
+        
+        def median(X):
+            if len(X) > 2:
+                return np.median(X)
+            else:
+                return None
+            
+        def mad(X):
+            if len(X) > 2:
+                med = np.median(X)
+                resid = X - med
+                mad = np.median(np.abs(resid))
+                return mad
+            else:
+                return None
+
         T.insert(0, 'BT', BT)
         T.insert(0, 'CN', CN)
+        GN = [graph.neighbors(i) for i in range(0, graph.vcount())]
+        BT_median = [median([BT[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        BT_mad = [mad([BT[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        T.insert(0, 'BT_median', BT_median)
+        T.insert(0, 'BT_mad', BT_mad)
+
+        CN_median = [median([CN[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        CN_mad = [mad([CN[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        T.insert(0, 'CN_median', CN_median)
+        T.insert(0, 'CN_mad', CN_mad)
+
+        if graph.vcount() < 500: # in future, give more control over choice of graph clustering. 
+            clusWT = ig.Graph.community_walktrap(graph, weights = graph.es['weight'], steps = clus_steps).as_clustering().membership
+        else:
+            clusWT = ig.Graph.community_leiden(graph, resolution = 0.5).membership
+        T.insert(0, 'clus', clusWT)
 
         graph_membership = clus[0].replace(to_replace = list(T['duplicate']), value = list(T['clus']))
         self.membership_all = pd.DataFrame({'subcluster': clus[0]['membership'], 'graph_cluster': graph_membership['membership']})
@@ -589,7 +629,7 @@ class Cluster:
         for i in range(0, len(clus_core)):
             T.loc[clus_core[i], 'core'] = True
 
-        self.subcluster_points = T[['core', 'CN', 'BT', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness'})
+        self.subcluster_points = T[['core', 'CN', 'BT', 'CN_median', 'CN_mad', 'BT_median', 'BT_mad', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness', 'CN_median': 'coreness_median', 'CN_mad': 'coreness_mad', 'BT_median': 'betweeness_median', 'BT_mad': 'betweeness_mad'})
 
         A = self.membership_all['subcluster'].value_counts()
         B = A.index
