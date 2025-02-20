@@ -22,6 +22,7 @@ from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
+from sklearn.decomposition import PCA
 from sklearn.utils.extmath import randomized_svd
 from sknetwork.clustering import Louvain
 import igraph as ig
@@ -43,7 +44,7 @@ def NPN(I, ind, dist, rho):
     else:
         return -1
 
-def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
+def NN_density_cluster(coords: pd.DataFrame, K_nn: int):
     """Density gradient clustering using a nearest neighbours approximation
 
     Parameters
@@ -62,7 +63,7 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
     """
 
     K_nn = K_nn + 1
-    NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1, p = p)
+    NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1)
     NN.fit(coords)
     dist, ind = NN.kneighbors(coords)
     mindist = np.min(dist[dist > 0])  # some cells have exactly the same profile thus sometimes the Kth NND can be zero. 
@@ -196,8 +197,7 @@ def Workflow(
         input_data_path: str, # location of input_dataframe
         output_parent_directory: str, # location of directory structure
         ncomps: int = 50, # input parameter for Transform
-        n_iter: int = 10, # input parameter for Transform
-        n_oversamples: int = 50, # input parameter for Transform
+        n_iter: int = 100, # input parameter for Transform
         transform_input: bool = True,
         cell_K_nn: int = 5, # input parameter for Cluster
         cell_clus_steps: int = 1000,  # input parameter for Cluster
@@ -205,8 +205,6 @@ def Workflow(
         gene_clus_steps: int = 1000,  # input parameter for Cluster
         similarity_threshold_clus_cell: float = 0.2,  # input parameter for Cluster (cell)
         similarity_threshold_clus_gene: float = 0.2, # input parameter for Cluster (gene)
-        p_cell: float = 2, # Minkowski distance parameter
-        p_gene: float = 2, # Minkowski distance parameter
         similarity_threshold_specificity: float = 0.2, # input parameter for SpecificityNetwork
         neighbourhood_flow_K_nn: int = 6,  # input parameter for NeighbourhoodFlow
         dist_thres: float = 10000, # input parameter for NeighbourhoodFlow
@@ -268,9 +266,7 @@ def Workflow(
         ncomps : int 
             input parameter for Transform. Default is 50
         n_iter : int
-            input parameter for Transform. Default is 10
-        n_oversamples : int
-            input parameter for Transform. Default is 50
+            input parameter for Transform. Default is 100
         transform_input : bool
             Boolean indicating whether to perform transformation of input data. Default is True. 
         cell_K_nn : int 
@@ -285,10 +281,6 @@ def Workflow(
             input parameter for Cluster (mode = 'cell'). Default is 0.2
         similarity_threshold_clus_gene : float
             input parameter for Cluster (mode = 'gene'). Default is 0.2
-        p_cell: float 
-            Input parameter for Cluster (mode = 'cell') Default is 2
-        p_gene: float 
-            Input parameter for Cluster (mode = 'gene') Default is 2
         similarity_threshold_clus_specificity : float
             input parameter for SpecificityNetwork. Default is 0.2
         neighbourhood_flow_K_nn : int
@@ -381,7 +373,7 @@ def Workflow(
             if os.listdir(output_parent_directory + 'output/transform/') != []:
                 if not transform_overwrite:
                     raise FileExistsError("/output/transform/ already contain results. \nYou will overwrite these results if you proceed. \nPlease create a new parent directory or use transform_overwrite = True")            
-            Y = Transform(input_dataframe, ncomps = ncomps, n_iter = n_iter, n_oversamples=n_oversamples, transform = transform_input, goodness_of_fit = transform_goodness_of_fit)    
+            Y = Transform(input_dataframe, ncomps = ncomps, n_iter = n_iter, transform = transform_input, goodness_of_fit = transform_goodness_of_fit)    
             # if transform_goodness_of_fit:
             #     if transform_input:
             #         Y = Transform(input_dataframe, ncomps = ncomps, n_iter = n_iter, transform = True, goodness_of_fit = True)
@@ -419,7 +411,7 @@ def Workflow(
         if cluster_cells:
             if (not transform and transform_pickle_path == None):
                 raise ReferenceError("Cluster requires Transform output")
-            cell_cluster = Cluster(Y, K_nn = cell_K_nn, clus_steps = cell_clus_steps, similarity_threshold = similarity_threshold_clus_cell, p = p_cell)
+            cell_cluster = Cluster(Y, K_nn = cell_K_nn, clus_steps = cell_clus_steps, similarity_threshold = similarity_threshold_clus_cell)
             if cluster_cells_subdirectory == None:
                 subdir = "output/cells/"
             else:
@@ -457,7 +449,7 @@ def Workflow(
         if cluster_genes:
             if (not transform and transform_pickle_path == None):
                 raise ReferenceError("Cluster requires Transform output")
-            gene_cluster = Cluster(Y, K_nn = gene_K_nn, clus_steps = gene_clus_steps, mode = 'genes', similarity_threshold = similarity_threshold_clus_gene, p = p_gene)
+            gene_cluster = Cluster(Y, K_nn = gene_K_nn, clus_steps = gene_clus_steps, mode = 'genes', similarity_threshold = similarity_threshold_clus_gene)
             if cluster_genes_subdirectory == None:
                 subdir = "output/genes/"
             else:
@@ -608,7 +600,7 @@ class Transform:
         Saves output in R-friendly format
     """
 
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 100, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -617,9 +609,7 @@ class Transform:
         ncomps : int
             The number of singular value components to compute. Default is 50
         n_iter : int
-            The number of iterations to use in the randomised singular value decomposition. Default is 10.
-        n_oversamples: int 
-            Parameter controlling sampling of input_dataframe in the randomised singular value decomposition. Tune this parameter before tuning n_iter. See scikit docs for full details. 
+            The number of iterations to use in the randomised singular value decomposition. Default is 100. 
         transform : bool
             Boolean indicating whether to perform the Correspondence Analysis transformation before SVD. Default is True. 
         goodness_of_fit : bool
@@ -643,8 +633,7 @@ class Transform:
             P = np.array((1/cm[self.col_keep]**0.5)) * (D1.loc[self.row_keep, self.col_keep] - rc) * np.array((1/rm[self.row_keep]**0.5)).reshape((-1,1))
         else:
             P = input_dataframe.loc[self.row_keep, self.col_keep]
-        #P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, random_state = 0) # or dask svd for large data
-        P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, n_oversamples = n_oversamples)
+        P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, random_state = 0) # or dask svd for large data
 
         if goodness_of_fit:
             L = list(range(1, ncomps+1, int(np.floor((ncomps+1)/10))))
@@ -660,17 +649,15 @@ class Transform:
             self.gof_gene.index = input_dataframe.loc[self.row_keep, self.col_keep].columns
             self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
 
-            self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, P.loc[self.row_keep, self.col_keep]))
+            self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_cell.insert(0, 'total_count', np.apply_along_axis(np.sum, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
                        
-            self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, P.loc[self.row_keep, self.col_keep]))
+            self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
             self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_gene.insert(0, 'total_count', np.apply_along_axis(np.sum, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -816,7 +803,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold = 0.2, p: float = 2): 
+    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold = 0.2): 
         """
         Parameters
         ----------
@@ -831,15 +818,13 @@ class Cluster:
         similarity_threshold : float
             The threshold used to create the gene/cell scaffold graph. Similarity values below the threshold are set to zero and edges are omitted. 
             Default is 0.2
-        p: float
-            A parameter controlling the Minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
         """
 
         K_nn = K_nn + 1
         if mode == 'cells':
-            clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p)
+            clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn)
         elif mode == 'genes':
-            clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p)
+            clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn)
         else:
             print('mode is either cells or genes')
 
@@ -1095,7 +1080,7 @@ class NeighbourhoodFlow:
 
         for i in range(0, dist.shape[0]):
             w = dist[i, range(1, ncol)] < dist_thres
-            s1 = int(XY.iloc[i]['subcluster'])
+            s1 = XY.iloc[i]['subcluster']
             s2 = XY.iloc[ind[i, range(1, ncol)][w]]['subcluster']
             t = np.bincount(s2)
             t_names = np.nonzero(t)[0]
