@@ -895,7 +895,7 @@ class Cluster:
         T.insert(0, 'clus', clusWT)
 
         graph_membership = clus[0].replace(to_replace = list(T['duplicate']), value = list(T['clus']))
-        self.membership_all = pd.DataFrame({'subcluster': clus[0]['membership'], 'graph_cluster': graph_membership['membership']})
+        self.membership_all = pd.DataFrame({'subcluster': clus[0]['membership'], 'graph_cluster': graph_membership['membership'], 'local_density': clus[2]['local_density']})
 
         # cluster wise metrics
         BT_DF = T[['BT', 'clus']]
