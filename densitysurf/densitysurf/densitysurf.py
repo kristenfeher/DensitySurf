@@ -61,7 +61,6 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
         The second element of the list are the highest density points of each cluster.
     """
 
-    K_nn = K_nn + 1
     NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1, p = p)
     NN.fit(coords)
     dist, ind = NN.kneighbors(coords)
@@ -80,18 +79,18 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
         bigG.append(G)
 
     bigG_mem = pd.DataFrame([bigG[k][-2] if len(bigG[k]) > 1 else k for k in range(0, len(bigG))], index = coords.index, columns=['membership']) 
-    # get coords corresponding to densest nodes
-    exemplars = coords.iloc[np.unique(bigG_mem)] 
+    # # get coords corresponding to densest nodes
+    exemplars = coords.iloc[np.unique(bigG_mem)]
 
-    # # merge identical points with different labels
     DF1 = bigG_mem.loc[exemplars.index] # column 'membership' is numerical index of densest points, dataframe index is the points' IDs
     DF1.columns = ['membership']
     DF2 = pd.DataFrame(exemplars.groupby(list(exemplars)).ngroup(), columns = ['duplicate']) # column 'duplicate' labels densest points according to whether they are identical to each other
     exemplars = DF1.merge(DF2, right_index=True, left_index = True).merge(exemplars, right_index = True, left_index = True) # merge the information into one dataframe
 
     subcluster_membership = bigG_mem.replace(to_replace=list(exemplars['membership']), value = list(exemplars['duplicate']))
+    density = pd.DataFrame({"local_density": rho}, index = coords.index)
 
-    return(list((subcluster_membership, exemplars)))
+    return(list((subcluster_membership, exemplars, density)))
 
 def veclen(x):
     """A helper function to obtain the length of a vector"""
@@ -542,7 +541,7 @@ def Workflow(
             if neighbourhood_flow_subdirectory == None:
                 subdir = "output/neighbourhood_flow/"
             else:
-                subdir = "output/neighbourhood_flow/" + specificity_network_subdirectory
+                subdir = "output/neighbourhood_flow/" + neighbourhood_flow_subdirectory
             if not os.path.isdir(output_parent_directory + subdir):
                 os.mkdir(output_parent_directory + subdir)
             else:
