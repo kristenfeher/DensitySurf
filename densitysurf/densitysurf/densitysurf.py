@@ -30,9 +30,14 @@ import pickle
 
 __all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
+# def spherical_transform(X):
+#     """Helper function to normlise a vector to length one"""
+#     return(X/np.sqrt(np.sum(np.square(X))))
+
 def spherical_transform(X):
     """Helper function to normlise a vector to length one"""
-    return(X/np.sqrt(np.sum(np.square(X))))
+    return(np.transpose(np.transpose(X) * 1/np.sum(X**2, axis = 1)**0.5))
+
 
 def NPN(I, ind, dist, rho):
     """Helper function for NN_density_cluster"""
@@ -685,14 +690,14 @@ class Transform:
         ca_comps = P_svd[0] * P_svd[1] # cells
         cnames = ['cell_coord' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
-        cell_coord = np.apply_along_axis(spherical_transform, 1, ca_comps)
+        cell_coord = spherical_transform(ca_comps)
         self.cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
 
         # spherical gene coordinates
         ca_comps = np.transpose(P_svd[2]) * P_svd[1] # genes
         cnames = ['gene_coord' + str(a) for a in range(1, ncomps + 1)]
         idx = self.col_names[self.col_keep]
-        gene_coord = np.apply_along_axis(spherical_transform, 1, ca_comps)
+        gene_coord = spherical_transform(ca_comps)
         self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
     def umap(self, cell = True, gene = True, ncomp_cell:int = None, ncomp_gene:int = None):
