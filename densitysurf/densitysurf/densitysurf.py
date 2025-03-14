@@ -107,8 +107,10 @@ def var_expl(P_svd, i): # variance explained over rows, columns
     s1 = P_svd[1][0:i]
     s2 = P_svd[2][0:i, :]
     P_reconstruct = np.matmul(np.matmul(s0, np.diag(s1)), s2)
-    Lcol = np.apply_along_axis(veclen, 0, P_reconstruct)
-    Lrow = np.apply_along_axis(veclen, 1, P_reconstruct)
+    #Lcol = np.apply_along_axis(veclen, 0, P_reconstruct)
+    #Lrow = np.apply_along_axis(veclen, 1, P_reconstruct)
+    Lcol = np.sum(P_reconstruct**2, axis = 0)
+    Lrow = np.sum(P_reconstruct**2, axis = 1)
     return([Lcol, Lrow])
 
 def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
@@ -635,20 +637,27 @@ class Transform:
   
         # normalise, row and columns masses
         # don't actually need this if transform == False, but just keep it for consistency
-        D1 = input_dataframe/(input_dataframe.sum().sum())
-        cm = D1.sum(axis = 0)
+        # D1 = input_dataframe/(input_dataframe.sum().sum())
+        # cm = D1.sum(axis = 0)
+        # self.col_keep = cm != 0
+        # rm = D1.sum(axis = 1)
+        # self.row_keep = rm != 0
+
+        D1 = np.array(input_dataframe)
+        D1 = D1/D1.sum()
+        cm = np.sum(D1, axis = 0)
         self.col_keep = cm != 0
-        rm = D1.sum(axis = 1)
+        rm = np.sum(D1, axis = 1)
         self.row_keep = rm != 0
 
         # # CA transform and randomised SVD
         if transform:
             rc = np.outer(rm[self.row_keep], cm[self.col_keep])
-            P = np.array((1/cm[self.col_keep]**0.5)) * (D1.loc[self.row_keep, self.col_keep] - rc) * np.array((1/rm[self.row_keep]**0.5)).reshape((-1,1))
+            P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
         else:
-            P = input_dataframe.loc[self.row_keep, self.col_keep]
+            P = np.array(input_dataframe.loc[self.row_keep, self.col_keep])
         #P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, random_state = 0) # or dask svd for large data
-        P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, n_oversamples = n_oversamples)
+        P_svd = randomized_svd(P, n_components=ncomps, n_iter=n_iter, n_oversamples = n_oversamples)
 
         if goodness_of_fit:
             L = list(range(1, ncomps+1, int(np.floor((ncomps+1)/10))))
@@ -664,17 +673,29 @@ class Transform:
             self.gof_gene.index = input_dataframe.loc[self.row_keep, self.col_keep].columns
             self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
 
-            self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, P.loc[self.row_keep, self.col_keep]))
-            self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_cell.insert(0, 'total_count', np.apply_along_axis(np.sum, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, P.loc[self.row_keep, self.col_keep]))
+            # self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_cell.insert(0, 'total_count', np.apply_along_axis(np.sum, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
                        
-            self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, P.loc[self.row_keep, self.col_keep]))
-            self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            self.gof_gene.insert(0, 'total_count', np.apply_along_axis(np.sum, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, P.loc[self.row_keep, self.col_keep]))
+            # self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+            # self.gof_gene.insert(0, 'total_count', np.apply_along_axis(np.sum, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
+
+            self.gof_cell.insert(0, 'total_length', np.sum(P**2, axis = 1)**0.5)
+            self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.gof_cell.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+                       
+            self.gof_gene.insert(0, 'total_length', np.sum(P**2, axis = 0)**0.5)
+            self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
