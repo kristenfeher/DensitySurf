@@ -653,7 +653,7 @@ class Transform:
         # # CA transform and randomised SVD
         if transform:
             rc = np.outer(rm[self.row_keep], cm[self.col_keep])
-            P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
+            P = (D1[self.row_keep, :][:, self.col_keep] - rc)/np.sqrt(rc)
         else:
             P = np.array(input_dataframe.loc[self.row_keep, self.col_keep])
         #P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, random_state = 0) # or dask svd for large data
