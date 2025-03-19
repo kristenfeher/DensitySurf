@@ -841,7 +841,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold = 0.2, p: float = 2): 
+    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, clus_dim: float = 0): 
         """
         Parameters
         ----------
@@ -862,9 +862,19 @@ class Cluster:
 
         K_nn = K_nn + 1
         if mode == 'cells':
-            clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p)
+            if clus_dim == 0:
+                clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p)
+            elif clus_dim > 1 and clus_dim <= coords.cell_coord.shape[1]:
+                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, clus_dim)], K_nn = K_nn, p = p)
+            else: 
+                raise IndexError("clus_dim is larger than the number of columns in cell_coord")
         elif mode == 'genes':
-            clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p)
+            if clus_dim == 0:
+                clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p)
+            elif clus_dim > 1 and clus_dim <= coords.gene_coord.shape[1]:
+                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, clus_dim)], K_nn = K_nn, p = p)
+            else:
+                raise IndexError("clus_dim is larger than the number of columns in gene_coord")
         else:
             print('mode is either cells or genes')
 
