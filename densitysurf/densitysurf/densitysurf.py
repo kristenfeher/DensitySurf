@@ -48,7 +48,7 @@ def NPN(I, ind, dist, rho):
     else:
         return -1
 
-def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
+def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2, metric : str = 'minkowski'):
     """Density gradient clustering using a nearest neighbours approximation
 
     Parameters
@@ -58,6 +58,10 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
     
     K_nn : int
         The number of nearest neighbours used to construct the density approximation.
+    p : float
+        Parameter used to define the minkowski distance. Minkowski distance with p = 2 is equivalent to the familiar euclidean distance.
+    metric : str
+        Parameter used to choose the distance metric. Default is Minkowski. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
 
     Returns
     -------
@@ -66,7 +70,7 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2):
         The second element of the list are the highest density points of each cluster.
     """
 
-    NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1, p = p)
+    NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1, p = p, metric = metric)
     NN.fit(coords)
     dist, ind = NN.kneighbors(coords)
     mindist = np.min(dist[dist > 0])  # some cells have exactly the same profile thus sometimes the Kth NND can be zero. 
@@ -841,7 +845,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, ncomp_clus: float = 0): 
+    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, metric : str = 'minkowski', ncomp_clus: float = 0): 
         """
         Parameters
         ----------
@@ -860,14 +864,19 @@ class Cluster:
             A parameter controlling the Minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
         ncomp_clus: float
             A parameter controlling how many components of cell/gene coords to use when clustering. Default is the dummy value 0, which translates to using all the components contained in cell/gene coords. 
+        metric : str
+            Parameter used to choose the distance metric. Default is Minkowski. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
+
         """
 
         self.ncomp_clus = ncomp_clus
+        self.p = p
+        self.metric = metric
 
         K_nn = K_nn + 1
         if mode == 'cells':
             if ncomp_clus == 0:
-                clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p)
+                clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p, metric = metric)
             elif ncomp_clus > 1 and ncomp_clus <= coords.cell_coord.shape[1]:
                 clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p)
             else: 
