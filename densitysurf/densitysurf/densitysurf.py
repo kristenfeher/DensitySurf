@@ -878,14 +878,14 @@ class Cluster:
             if ncomp_clus == 0:
                 clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p, metric = metric)
             elif ncomp_clus > 1 and ncomp_clus <= coords.cell_coord.shape[1]:
-                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p)
+                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p, metric=metric)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
         elif mode == 'genes':
             if ncomp_clus == 0:
-                clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p)
+                clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p, metric = metric)
             elif ncomp_clus > 1 and ncomp_clus <= coords.gene_coord.shape[1]:
-                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p)
+                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p, metric = metric)
             else:
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
         else:
@@ -1139,11 +1139,16 @@ class NeighbourhoodFlow:
         NN.fit(XY[['X', 'Y']])
         dist, ind = NN.kneighbors(XY[['X', 'Y']])
 
-        L = len(np.unique(XY['subcluster']))
+        #L = len(np.unique(XY['subcluster']))
+        L = np.max(XY['subcluster']) + 1
         n_mtx = np.zeros((L, L))
 
         def func(X):
-            return(X/np.sum(X))
+            s = np.sum(X)
+            if s == 0:
+                return(X)
+            else:
+                return(X/s)
 
         #dist_thres = 300
         ncol = dist.shape[1]
