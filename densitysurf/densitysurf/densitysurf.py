@@ -841,7 +841,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, clus_dim: float = 0): 
+    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, ncomp_clus: float = 0): 
         """
         Parameters
         ----------
@@ -858,23 +858,27 @@ class Cluster:
             Default is 0.2
         p: float
             A parameter controlling the Minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
+        ncomp_clus: float
+            A parameter controlling how many components of cell/gene coords to use when clustering. Default is the dummy value 0, which translates to using all the components contained in cell/gene coords. 
         """
+
+        self.ncomp_clus = ncomp_clus
 
         K_nn = K_nn + 1
         if mode == 'cells':
-            if clus_dim == 0:
+            if ncomp_clus == 0:
                 clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p)
-            elif clus_dim > 1 and clus_dim <= coords.cell_coord.shape[1]:
-                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, clus_dim)], K_nn = K_nn, p = p)
+            elif ncomp_clus > 1 and ncomp_clus <= coords.cell_coord.shape[1]:
+                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p)
             else: 
-                raise IndexError("clus_dim is larger than the number of columns in cell_coord")
+                raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
         elif mode == 'genes':
-            if clus_dim == 0:
+            if ncomp_clus == 0:
                 clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p)
-            elif clus_dim > 1 and clus_dim <= coords.gene_coord.shape[1]:
-                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, clus_dim)], K_nn = K_nn, p = p)
+            elif ncomp_clus > 1 and ncomp_clus <= coords.gene_coord.shape[1]:
+                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p)
             else:
-                raise IndexError("clus_dim is larger than the number of columns in gene_coord")
+                raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
         else:
             print('mode is either cells or genes')
 
@@ -1031,8 +1035,15 @@ class SpecificityNetwork:
             Default is 0.2
 
         """
+        if cells.ncomp_clus != genes.ncomp_clus:
+            raise ValueError("Cell clustering and gene clustering not performed on same number of components (controlled by ncomp_clus argument of Cluster)")
+
+
         cc = coords.cell_coord.loc[cells.subcluster_points.index]
         gc = coords.gene_coord.loc[genes.subcluster_points.index]
+        if cells.ncomp_clus > 0:
+            cc = cc.iloc[:, range(0, cells.ncomp_clus)]
+            gc = gc.iloc[:, range(0, genes.ncomp_clus)]
         cnames = ['c' + str(K) for K in cells.subcluster_points['subcluster']]
         gnames = ['g' + str(K) for K in genes.subcluster_points['subcluster']]
 
