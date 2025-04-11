@@ -38,6 +38,32 @@ def spherical_transform(X):
     """Helper function to normlise a vector to length one"""
     return(np.transpose(np.transpose(X) * 1/np.sum(X**2, axis = 1)**0.5))
 
+def ca_transform(input_dataframe: pd.DataFrame): #input_dataframe must be pd.DataFrame
+
+    """
+
+    Parameters
+    ----------
+    input_dataframe: pd.DataFrame
+        Dataframe with non-negative real numbers. 
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame transformed using correspondence analysis transformation
+    """
+    D1 = np.array(input_dataframe)
+    D1 = D1/D1.sum()
+    cm = np.sum(D1, axis = 0)
+    col_keep = cm != 0
+    rm = np.sum(D1, axis = 1)
+    row_keep = rm != 0
+
+    # # CA transform and randomised SVD
+    rc = np.outer(rm[row_keep], cm[col_keep])
+    P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
+    return(pd.DataFrame(P, index = input_dataframe.index[row_keep], columns = input_dataframe.columns[col_keep]))
+
 
 def NPN(I, ind, dist, rho):
     """Helper function for NN_density_cluster"""
@@ -113,8 +139,8 @@ def var_expl(P_svd, i): # variance explained over rows, columns
     P_reconstruct = np.matmul(np.matmul(s0, np.diag(s1)), s2)
     #Lcol = np.apply_along_axis(veclen, 0, P_reconstruct)
     #Lrow = np.apply_along_axis(veclen, 1, P_reconstruct)
-    Lcol = np.sum(P_reconstruct**2, axis = 0)
-    Lrow = np.sum(P_reconstruct**2, axis = 1)
+    Lcol = np.sum(P_reconstruct**2, axis = 0)**0.5
+    Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
     return([Lcol, Lrow])
 
 def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
@@ -215,8 +241,10 @@ def Workflow(
         gene_clus_steps: int = 1000,  # input parameter for Cluster
         similarity_threshold_clus_cell: float = 0.2,  # input parameter for Cluster (cell)
         similarity_threshold_clus_gene: float = 0.2, # input parameter for Cluster (gene)
-        p_cell: float = 2, # Minkowski distance parameter
-        p_gene: float = 2, # Minkowski distance parameter
+        p_cell: int = 2, # Minkowski distance parameter
+        p_gene: int = 2, # Minkowski distance parameter
+        ncomp_clus: int = 0, # number of components used for clustering
+        metric: str = 'minkowski', # clustering metric
         similarity_threshold_specificity: float = 0.2, # input parameter for SpecificityNetwork
         neighbourhood_flow_K_nn: int = 6,  # input parameter for NeighbourhoodFlow
         dist_thres: float = 10000, # input parameter for NeighbourhoodFlow
@@ -296,9 +324,13 @@ def Workflow(
         similarity_threshold_clus_gene : float
             input parameter for Cluster (mode = 'gene'). Default is 0.2
         p_cell: float 
-            Input parameter for Cluster (mode = 'cell') Default is 2
+            Input parameter for Cluster (mode = 'cell') to use with metric = 'minkowski'. Default is 2
         p_gene: float 
-            Input parameter for Cluster (mode = 'gene') Default is 2
+            Input parameter for Cluster (mode = 'gene') to use with metric = 'minkowski'. Default is 2
+        ncomp_clus : int
+            Number of components used for clustering. Default is dummy value 0 to use all available components. 
+        metric : str
+            Metric to use to calculate nearest neighbours. Default is 'minkowski'. 
         similarity_threshold_clus_specificity : float
             input parameter for SpecificityNetwork. Default is 0.2
         neighbourhood_flow_K_nn : int
@@ -429,7 +461,7 @@ def Workflow(
         if cluster_cells:
             if (not transform and transform_pickle_path == None):
                 raise ReferenceError("Cluster requires Transform output")
-            cell_cluster = Cluster(Y, K_nn = cell_K_nn, clus_steps = cell_clus_steps, similarity_threshold = similarity_threshold_clus_cell, p = p_cell)
+            cell_cluster = Cluster(Y, K_nn = cell_K_nn, clus_steps = cell_clus_steps, similarity_threshold = similarity_threshold_clus_cell, p = p_cell, ncomp_clus = ncomp_clus, metric = metric)
             if cluster_cells_subdirectory == None:
                 subdir = "output/cells/"
             else:
@@ -467,7 +499,7 @@ def Workflow(
         if cluster_genes:
             if (not transform and transform_pickle_path == None):
                 raise ReferenceError("Cluster requires Transform output")
-            gene_cluster = Cluster(Y, K_nn = gene_K_nn, clus_steps = gene_clus_steps, mode = 'genes', similarity_threshold = similarity_threshold_clus_gene, p = p_gene)
+            gene_cluster = Cluster(Y, K_nn = gene_K_nn, clus_steps = gene_clus_steps, mode = 'genes', similarity_threshold = similarity_threshold_clus_gene, p = p_gene, ncomp_clus = ncomp_clus, metric = metric)
             if cluster_genes_subdirectory == None:
                 subdir = "output/genes/"
             else:
@@ -689,6 +721,9 @@ class Transform:
             # self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
             # self.gof_gene.insert(0, 'total_count', np.apply_along_axis(np.sum, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
 
+            #Lcol = np.sum(P_reconstruct**2, axis = 0)**0.5
+            #Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
+
             self.gof_cell.insert(0, 'total_length', np.sum(P**2, axis = 1)**0.5)
             self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
             self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
@@ -845,7 +880,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: float = 2, metric : str = 'minkowski', ncomp_clus: float = 0): 
+    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: int = 2, metric : str = 'minkowski', ncomp_clus: int = 0): 
         """
         Parameters
         ----------
@@ -861,13 +896,26 @@ class Cluster:
             The threshold used to create the gene/cell scaffold graph. Similarity values below the threshold are set to zero and edges are omitted. 
             Default is 0.2
         p: float
-            A parameter controlling the Minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
+            A parameter controlling the minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
         ncomp_clus: float
             A parameter controlling how many components of cell/gene coords to use when clustering. Default is the dummy value 0, which translates to using all the components contained in cell/gene coords. 
         metric : str
-            Parameter used to choose the distance metric. Default is Minkowski. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
+            Parameter used to choose the distance metric. Default is 'minkowski'. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
 
         """
+
+        # ca_comps = P_svd[0] * P_svd[1] # cells
+        # cnames = ['cell_coord' + str(a) for a in range(1, ncomps + 1)]
+        # idx = self.row_names[self.row_keep]
+        # cell_coord = spherical_transform(ca_comps)
+        # self.cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
+
+        # # spherical gene coordinates
+        # ca_comps = np.transpose(P_svd[2]) * P_svd[1] # genes
+        # cnames = ['gene_coord' + str(a) for a in range(1, ncomps + 1)]
+        # idx = self.col_names[self.col_keep]
+        # gene_coord = spherical_transform(ca_comps)
+        # self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
         self.ncomp_clus = ncomp_clus
         self.p = p
@@ -878,14 +926,26 @@ class Cluster:
             if ncomp_clus == 0:
                 clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p, metric = metric)
             elif ncomp_clus > 1 and ncomp_clus <= coords.cell_coord.shape[1]:
-                clus = NN_density_cluster(coords.cell_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p, metric=metric)
+                ca_comps = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
+                ca_comps = ca_comps[:, range(0, ncomp_clus)]
+                cnames = ['cell_coord' + str(a) for a in range(1, ncomp_clus + 1)]
+                idx = coords.row_names[coords.row_keep]
+                cell_coord = spherical_transform(ca_comps)
+                cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
+                clus = NN_density_cluster(cell_coord, K_nn = K_nn, p = p, metric=metric)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
         elif mode == 'genes':
             if ncomp_clus == 0:
                 clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p, metric = metric)
             elif ncomp_clus > 1 and ncomp_clus <= coords.gene_coord.shape[1]:
-                clus = NN_density_cluster(coords.gene_coord.iloc[:, range(0, ncomp_clus)], K_nn = K_nn, p = p, metric = metric)
+                ca_comps = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
+                ca_comps = ca_comps[:, range(0, ncomp_clus)]
+                cnames = ['gene_coord' + str(a) for a in range(1, ncomp_clus + 1)]
+                idx = coords.col_names[coords.col_keep]
+                gene_coord = spherical_transform(ca_comps)
+                gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
+                clus = NN_density_cluster(gene_coord, K_nn = K_nn, p = p, metric = metric)
             else:
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
         else:
@@ -899,9 +959,21 @@ class Cluster:
         dotprod = np.matmul(T.drop(columns = ['membership', 'duplicate']).to_numpy(), np.transpose(T.drop(columns = ['membership', 'duplicate']).to_numpy()))
         dotprod_index = T['duplicate']
         self.subcluster_similarity = pd.DataFrame(dotprod, index = dotprod_index, columns = dotprod_index).rename_axis(index = None, columns = None)#.sort_index().sort_index(axis = 1)
-        dotprod_thres = dotprod.copy()
-        dotprod_thres[dotprod_thres < similarity_threshold] = 0
+        #dotprod_thres = dotprod.copy()
+        #dotprod_thres[dotprod_thres < similarity_threshold] = 0
+        def similarity_NN_threshold_symmetric(graph, K_nn):
+            for u in range(0, graph.shape[1]): 
+                toprank = np.argsort(np.argsort(-graph[:, u])) > K_nn
+                graph[toprank, u] = 0
+            graph = np.add(graph, np.transpose(graph))
+            return(graph)
         
+
+        dotprod_thres = similarity_NN_threshold_symmetric(dotprod, 5)
+
+
+
+
         ##################################
         # # create graph
         graph = ig.Graph().Weighted_Adjacency(dotprod_thres, mode = 'undirected')
