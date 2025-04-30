@@ -904,19 +904,6 @@ class Cluster:
 
         """
 
-        # ca_comps = P_svd[0] * P_svd[1] # cells
-        # cnames = ['cell_coord' + str(a) for a in range(1, ncomps + 1)]
-        # idx = self.row_names[self.row_keep]
-        # cell_coord = spherical_transform(ca_comps)
-        # self.cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
-
-        # # spherical gene coordinates
-        # ca_comps = np.transpose(P_svd[2]) * P_svd[1] # genes
-        # cnames = ['gene_coord' + str(a) for a in range(1, ncomps + 1)]
-        # idx = self.col_names[self.col_keep]
-        # gene_coord = spherical_transform(ca_comps)
-        # self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
-
         self.ncomp_clus = ncomp_clus
         self.p = p
         self.metric = metric
@@ -959,20 +946,17 @@ class Cluster:
         dotprod = np.matmul(T.drop(columns = ['membership', 'duplicate']).to_numpy(), np.transpose(T.drop(columns = ['membership', 'duplicate']).to_numpy()))
         dotprod_index = T['duplicate']
         self.subcluster_similarity = pd.DataFrame(dotprod, index = dotprod_index, columns = dotprod_index).rename_axis(index = None, columns = None)#.sort_index().sort_index(axis = 1)
-        #dotprod_thres = dotprod.copy()
-        #dotprod_thres[dotprod_thres < similarity_threshold] = 0
-        def similarity_NN_threshold_symmetric(graph, K_nn):
-            for u in range(0, graph.shape[1]): 
-                toprank = np.argsort(np.argsort(-graph[:, u])) > K_nn
-                graph[toprank, u] = 0
-            graph = np.add(graph, np.transpose(graph))
-            return(graph)
+        dotprod_thres = dotprod.copy()
+        dotprod_thres[dotprod_thres < similarity_threshold] = 0
+        # def similarity_NN_threshold_symmetric(graph, K_nn):
+        #     for u in range(0, graph.shape[1]): 
+        #         toprank = np.argsort(np.argsort(-graph[:, u])) > K_nn
+        #         graph[toprank, u] = 0
+        #     graph = np.add(graph, np.transpose(graph))
+        #     return(graph)
         
 
-        dotprod_thres = similarity_NN_threshold_symmetric(dotprod, 5)
-
-
-
+        # dotprod_thres = similarity_NN_threshold_symmetric(dotprod, 5)
 
         ##################################
         # # create graph
