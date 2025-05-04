@@ -1218,7 +1218,7 @@ class NeighbourhoodFlow:
             t_count = t[t_names]
             for j in range(0, len(t_names)):
                 n_mtx[s1, t_names[j]] = n_mtx[s1, t_names[j]] + t_count[j]
-        n_mtx = np.apply_along_axis(func, 1, n_mtx)
+        #n_mtx = np.apply_along_axis(func, 1, n_mtx)
 
         for i in range(0, ncol):
             for j in range(0, ncol):
