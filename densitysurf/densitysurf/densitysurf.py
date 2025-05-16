@@ -650,7 +650,7 @@ class Transform:
         Saves output in R-friendly format
     """
 
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True, min_percent = sum([list(range(1, 20)), list(range(20, 100, 10)), [95, 99]], [])): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -666,6 +666,8 @@ class Transform:
             Boolean indicating whether to perform the Correspondence Analysis transformation before SVD. Default is True. 
         goodness_of_fit : bool
             Boolean indicating whether to create goodness of fit statistics. 
+        min_percent
+            List of values on the interval (0, 100) indicating minimum percentages of variance for reconstruction error plot
         """
 
         self.col_names = input_dataframe.columns
@@ -709,21 +711,6 @@ class Transform:
             self.gof_gene.index = input_dataframe.loc[self.row_keep, self.col_keep].columns
             self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
 
-            # self.gof_cell.insert(0, 'total_length', np.apply_along_axis(veclen, 1, P.loc[self.row_keep, self.col_keep]))
-            # self.gof_cell.insert(0, 'mean_count', np.apply_along_axis(np.mean, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_cell.insert(0, 'median_count', np.apply_along_axis(np.median, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_cell.insert(0, 'sd_count', np.apply_along_axis(np.std, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_cell.insert(0, 'total_count', np.apply_along_axis(np.sum, 1, input_dataframe.loc[self.row_keep, self.col_keep]))
-                       
-            # self.gof_gene.insert(0, 'total_length', np.apply_along_axis(veclen, 0, P.loc[self.row_keep, self.col_keep]))
-            # self.gof_gene.insert(0, 'mean_count', np.apply_along_axis(np.mean, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_gene.insert(0, 'median_count', np.apply_along_axis(np.median, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_gene.insert(0, 'sd_count', np.apply_along_axis(np.std, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-            # self.gof_gene.insert(0, 'total_count', np.apply_along_axis(np.sum, 0, input_dataframe.loc[self.row_keep, self.col_keep]))
-
-            #Lcol = np.sum(P_reconstruct**2, axis = 0)**0.5
-            #Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
-
             self.gof_cell.insert(0, 'total_length', np.sum(P**2, axis = 1)**0.5)
             self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
             self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
@@ -735,6 +722,22 @@ class Transform:
             self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+
+            def err_freq(gof, c, min_percent) :
+                L = gof.shape[0]
+                err = gof[c]**2/gof['total_length']**2 * 100
+                return([sum(1 for x in err if x > y)/L*100 for y in min_percent])
+            
+            def gof_plot(gof, cols, min_percent):
+                gp = np.transpose(pd.DataFrame([err_freq(gof, x, min_percent) for x in cols]))
+                gp.columns = cols
+                gp.insert(0, 'min_percent', min_percent)
+                gp = gp.melt('min_percent')
+                gp.insert(0, 'ncomps', [int(x) for x in gp['variable'].replace('ncomps', '', regex = True)])
+                return(gp)
+            self.gp_cell = gof_plot(self.gof_cell, cnames, min_percent)
+            self.gp_gene = gof_plot(self.gof_gene, cnames, min_percent)
+
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -857,6 +860,8 @@ class Transform:
         if goodness_of_fit and hasattr(self, 'gof_cell'):
             self.gof_cell.to_csv(path + 'gof_cell.txt.gz', index_label = 'ID')
             self.gof_gene.to_csv(path + 'gof_gene.txt.gz', index_label = 'ID')
+            self.gp_cell.to_csv(path + 'reconstruct_err_cell.txt.gz')
+            self.gp_gene.to_csv(path + 'reconstruct_err_gene.txt.gz')
 
 
     
