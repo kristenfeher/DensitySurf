@@ -716,12 +716,16 @@ class Transform:
             self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
             self.gof_cell.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
             self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.gof_cell.insert(0, 'leverage', np.sum(P_svd[0]**2, axis = 1))
                        
             self.gof_gene.insert(0, 'total_length', np.sum(P**2, axis = 0)**0.5)
             self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gof_gene.insert(0, 'leverage', np.sum(P_svd[2]**2, axis = 1))
+
+            
 
             def err_freq(gof, c, min_percent) :
                 L = gof.shape[0]
