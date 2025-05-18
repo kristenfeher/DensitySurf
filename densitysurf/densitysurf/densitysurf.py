@@ -742,6 +742,17 @@ class Transform:
             self.gp_cell = gof_plot(self.gof_cell, cnames, min_percent)
             self.gp_gene = gof_plot(self.gof_gene, cnames, min_percent)
 
+            def skew_quartile(X): 
+                q1 = np.quantile(X, 1/4)
+                q2 = np.quantile(X, 2/4)
+                q3 = np.quantile(X, 3/4)
+                return((q3 + q1 - 2*q2)/(q3 - q1))
+            
+            skew_cell = np.abs(np.apply_along_axis(skew_quartile, 0, self.svd0))
+            skew_gene = np.abs(np.apply_along_axis(skew_quartile, 0, self.svd2))
+            self.gof_cell.insert(0, 'svd_skew', skew_cell)
+            self.gof_gene.insert(0, 'svd_skew', skew_gene)
+
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -877,6 +888,15 @@ class Transform:
             
             gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
             gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
+
+            def skew_figure(X, path):
+                plot = sb.lineplot(x = range(1, len(X) + 1), y = X)
+                plot.set(title = 'SVD component skew')
+                plot = plot.get_figure()
+                plot.savefig(path)
+
+            skew_figure(self.gof_cell['svd_skew'], path + 'svd_skew_cell.png')
+            skew_figure(self.gof_gene['svd_skew'], path + 'svd_skew_gene.png')
 
 
     
