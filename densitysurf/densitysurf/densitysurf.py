@@ -27,6 +27,8 @@ from sknetwork.clustering import Louvain
 import igraph as ig
 import os
 import pickle
+import seaborn as sb
+import matplotlib.pyplot as plt
 
 __all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
@@ -720,7 +722,7 @@ class Transform:
                 self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
                        
             self.gof_gene.insert(0, 'total_length', np.sum(P**2, axis = 0)**0.5)
-            self.gof_gene.insert(0, 'leverage', np.sum(P_svd[2]**2, axis = 1))
+            self.gof_gene.insert(0, 'leverage', np.sum(np.transpose(P_svd[2])**2, axis = 1))
             if transform:
                 self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
                 self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
@@ -748,11 +750,9 @@ class Transform:
                 q3 = np.quantile(X, 3/4)
                 return((q3 + q1 - 2*q2)/(q3 - q1))
             
-            skew_cell = np.abs(np.apply_along_axis(skew_quartile, 0, self.svd0))
-            skew_gene = np.abs(np.apply_along_axis(skew_quartile, 0, self.svd2))
-            self.gof_cell.insert(0, 'svd_skew', skew_cell)
-            self.gof_gene.insert(0, 'svd_skew', skew_gene)
-
+            skew_cell = np.abs(np.apply_along_axis(skew_quartile, 0, P_svd[0]))
+            skew_gene = np.abs(np.apply_along_axis(skew_quartile, 0, np.transpose(P_svd[2])))
+            self.skew = pd.DataFrame({'skew_cell' : skew_cell, 'skew_gene': skew_gene}, index = range(1, ncomps + 1))
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -877,14 +877,16 @@ class Transform:
             self.gof_gene.to_csv(path + 'gof_gene.txt.gz', index_label = 'ID')
             self.gp_cell.to_csv(path + 'reconstruct_err_cell.txt.gz')
             self.gp_gene.to_csv(path + 'reconstruct_err_gene.txt.gz')
+            self.skew.to_csv(path + 'svd_skew.txt.gz', index_label = 'component')
 
-            def gof_figure(G, path):
+            def gof_figure(G, path): # G is self.gp_cell/self.gp_gene
                 G.insert(0, 'log_value', np.log10(G['value'] + 0.001))
                 #G(0, 'mp', pd.Categorical(T.gp_gene['min_percent']))
                 plot = sb.lineplot(data = G, x = 'ncomps', y = 'log_value', hue = 'min_percent')
-                plot.set(title = 'min_percent: ' + str(T.gp_gene['min_percent'].unique()))
+                plot.set(title = 'min_percent: ' + str(G['min_percent'].unique()))
                 plot = plot.get_figure()
                 plot.savefig(path, pad_inches = 0.5, bbox_inches = 'tight', dpi = 500)
+                plt.close()
             
             gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
             gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
@@ -894,10 +896,10 @@ class Transform:
                 plot.set(title = 'SVD component skew')
                 plot = plot.get_figure()
                 plot.savefig(path)
+                plt.close()
 
-            skew_figure(self.gof_cell['svd_skew'], path + 'svd_skew_cell.png')
-            skew_figure(self.gof_gene['svd_skew'], path + 'svd_skew_gene.png')
-
+            skew_figure(self.skew['skew_cell'], path + 'svd_skew_cell.png')
+            skew_figure(self.skew['skew_gene'], path + 'svd_skew_gene.png')
 
     
 #################################################
