@@ -712,21 +712,21 @@ class Transform:
             self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
 
             self.gof_cell.insert(0, 'total_length', np.sum(P**2, axis = 1)**0.5)
-            self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-            self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-            self.gof_cell.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-            self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
             self.gof_cell.insert(0, 'leverage', np.sum(P_svd[0]**2, axis = 1))
+            if transform:
+                self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+                self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+                self.gof_cell.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+                self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
                        
             self.gof_gene.insert(0, 'total_length', np.sum(P**2, axis = 0)**0.5)
-            self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-            self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-            self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-            self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             self.gof_gene.insert(0, 'leverage', np.sum(P_svd[2]**2, axis = 1))
-
+            if transform:
+                self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+                self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+                self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+                self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
             
-
             def err_freq(gof, c, min_percent) :
                 L = gof.shape[0]
                 err = gof[c]**2/gof['total_length']**2 * 100
@@ -866,6 +866,17 @@ class Transform:
             self.gof_gene.to_csv(path + 'gof_gene.txt.gz', index_label = 'ID')
             self.gp_cell.to_csv(path + 'reconstruct_err_cell.txt.gz')
             self.gp_gene.to_csv(path + 'reconstruct_err_gene.txt.gz')
+
+            def gof_figure(G, path):
+                G.insert(0, 'log_value', np.log10(G['value'] + 0.001))
+                #G(0, 'mp', pd.Categorical(T.gp_gene['min_percent']))
+                plot = sb.lineplot(data = G, x = 'ncomps', y = 'log_value', hue = 'min_percent')
+                plot.set(title = 'min_percent: ' + str(T.gp_gene['min_percent'].unique()))
+                plot = plot.get_figure()
+                plot.savefig(path, pad_inches = 0.5, bbox_inches = 'tight', dpi = 500)
+            
+            gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
+            gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
 
 
     
