@@ -17,9 +17,9 @@ import numpy as np
 import pandas as pd
 import umap.umap_ as umap
 #import scanpy as sc
-import scipy
-from sklearn.datasets import load_digits
-from sklearn.model_selection import train_test_split
+#import scipy
+#from sklearn.datasets import load_digits
+#from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 from sklearn.utils.extmath import randomized_svd
@@ -29,6 +29,7 @@ import os
 import pickle
 import seaborn as sb
 import matplotlib.pyplot as plt
+from scipy.stats import binom
 
 __all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
@@ -922,7 +923,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: int = 2, metric : str = 'minkowski', ncomp_clus: int = 0): 
+    def __init__(self, coords: Transform, K_nn: int = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: int = 2, metric : str = 'minkowski', ncomp_clus: int = 0, prune : str = 'backbone', alpha : float = 0.05, prune_K_nn : int = 5): 
         """
         Parameters
         ----------
@@ -936,14 +937,20 @@ class Cluster:
             Mode is a choice of 'cells' or 'genes', indicating whether to cluster the cell_coords or gene_coords.  
         similarity_threshold : float
             The threshold used to create the gene/cell scaffold graph. Similarity values below the threshold are set to zero and edges are omitted. 
-            Default is 0.2
+            Default is 0.2. Used for threshold pruning method, and as a first step for backbone pruning method. 
         p: float
             A parameter controlling the minkowski distance. The default p = 2 is equivalent to the most commonly used euclidean distance. p = 1 is equivalent to the Manhattan distance. 
         ncomp_clus: float
             A parameter controlling how many components of cell/gene coords to use when clustering. Default is the dummy value 0, which translates to using all the components contained in cell/gene coords. 
         metric : str
             Parameter used to choose the distance metric. Default is 'minkowski'. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
-
+        prune : str
+            Parameter used to choose thte graph pruning method. Options are 'threshold' for a simple threshold using the parameter similarity_threshold, 'NN' to choose the nearest neighbours, and 'backbone' a node degree distribution preserving method. 
+        alpha : float
+            Parameter used to threshold p values of backbone pruning method
+        prune_K_nn : int
+            Parameter used to threshold using K_nn method
+            
         """
 
         self.ncomp_clus = ncomp_clus
@@ -988,18 +995,42 @@ class Cluster:
         dotprod = np.matmul(T.drop(columns = ['membership', 'duplicate']).to_numpy(), np.transpose(T.drop(columns = ['membership', 'duplicate']).to_numpy()))
         dotprod_index = T['duplicate']
         self.subcluster_similarity = pd.DataFrame(dotprod, index = dotprod_index, columns = dotprod_index).rename_axis(index = None, columns = None)#.sort_index().sort_index(axis = 1)
-        dotprod_thres = dotprod.copy()
-        dotprod_thres[dotprod_thres < similarity_threshold] = 0
-        # def similarity_NN_threshold_symmetric(graph, K_nn):
-        #     for u in range(0, graph.shape[1]): 
-        #         toprank = np.argsort(np.argsort(-graph[:, u])) > K_nn
-        #         graph[toprank, u] = 0
-        #     graph = np.add(graph, np.transpose(graph))
-        #     return(graph)
         
+        if prune == 'threshold':
+            dotprod_thres = dotprod.copy()
+            dotprod_thres[dotprod_thres < similarity_threshold] = 0
 
-        # dotprod_thres = similarity_NN_threshold_symmetric(dotprod, 5)
+        if prune == 'NN':
+            def similarity_NN_threshold_symmetric(graph, K_nn):
+                for u in range(0, graph.shape[1]): 
+                    toprank = np.argsort(np.argsort(-graph[:, u])) > K_nn
+                    graph[toprank, u] = 0
+                graph = np.add(graph, np.transpose(graph))
+                return(graph)
+            
+            dotprod_thres = similarity_NN_threshold_symmetric(dotprod, prune_K_nn)
 
+        if prune == 'backbone':
+            def pval(i, j, ki, t, sim):
+                p = ki[i]*ki[j]/(2*t**2)
+                return(1 - binom.cdf(sim[i, j], t, p))
+            
+            def binom_backbone(sim, alpha):
+                np.fill_diagonal(sim, 0)
+                sim = np.round(sim, 2)*100
+                ki = np.sum(sim, 0)
+                t = sum(ki) * 0.5
+                pval_mtx = [[pval(i, j, ki, t, sim) for j in range(0, len(ki))] for i in range(0, len(ki))]
+                pval_mtx = pd.DataFrame(pval_mtx)
+                pval_mtx[pval_mtx > alpha] = 1
+                pval_mtx[pval_mtx <= alpha] = 2
+                pval_mtx = pval_mtx - 1
+                return(sim * pval_mtx)
+            dotprod_thres = dotprod.copy()
+            dotprod_thres[dotprod_thres < similarity_threshold] = 0
+            dotprod_thres = binom_backbone(dotprod_thres, alpha)
+
+        self.subcluster_similarity_prune = pd.DataFrame(dotprod_thres, index = dotprod_index, columns = dotprod_index).rename_axis(index = None, columns = None)
         ##################################
         # # create graph
         graph = ig.Graph().Weighted_Adjacency(dotprod_thres, mode = 'undirected')
@@ -1044,35 +1075,7 @@ class Cluster:
         graph_membership = clus[0].replace(to_replace = list(T['duplicate']), value = list(T['clus']))
         self.membership_all = pd.DataFrame({'subcluster': clus[0]['membership'], 'graph_cluster': graph_membership['membership'], 'local_density': clus[2]['local_density']})
 
-        # cluster wise metrics
-        BT_DF = T[['BT', 'clus']]
-        Q1 = BT_DF.groupby('clus').quantile(0.25)
-        Q3 = BT_DF.groupby('clus').quantile(0.75)
-        IQR = Q3 - Q1
-        maxBT = Q3 + 1.5 * IQR
-
-        CN_DF = T[['CN', 'clus']]
-        Q1 = CN_DF.groupby('clus').quantile(0.25)
-        Q3 = CN_DF.groupby('clus').quantile(0.75)
-        IQR = Q3 - Q1
-        minCN = Q1 - 1.5 * IQR
-
-        # prune graph clusters
-        clus_core = []
-        for i in range(0, max(BT_DF['clus'] + 1)):
-            cond1 = BT_DF['clus'] == i
-            cond2 = BT_DF['BT'] <= maxBT[maxBT.index == i].iloc[0, 0]
-            cond3 = CN_DF['CN'] >= minCN[minCN.index == i].iloc[0, 0]
-            clus_core.append(BT_DF.loc[(cond1) & (cond2) & (cond3)].index)
-
-        # self.clus_core = clus_core
-
-        # update T to show whether subclusters are core members of graph clusters, based on BT and CN statistics above
-        T.insert(0, 'core', False)
-        for i in range(0, len(clus_core)):
-            T.loc[clus_core[i], 'core'] = True
-
-        self.subcluster_points = T[['core', 'CN', 'BT', 'CN_median', 'CN_mad', 'BT_median', 'BT_mad', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness', 'CN_median': 'coreness_median', 'CN_mad': 'coreness_mad', 'BT_median': 'betweeness_median', 'BT_mad': 'betweeness_mad'})
+        self.subcluster_points = T[[ 'CN', 'BT', 'CN_median', 'CN_mad', 'BT_median', 'BT_mad', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness', 'CN_median': 'coreness_median', 'CN_mad': 'coreness_mad', 'BT_median': 'betweeness_median', 'BT_mad': 'betweeness_mad'})
 
         A = self.membership_all['subcluster'].value_counts()
         B = A.index
@@ -1108,6 +1111,7 @@ class Cluster:
 
         if subcluster_similarity:
             self.subcluster_similarity.to_csv(path + 'subcluster_similarity.txt.gz', index_label = 'ID')
+            self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
 
 ########################################################
 class SpecificityNetwork:
