@@ -134,17 +134,28 @@ def veclen(x):
     """A helper function to obtain the length of a vector"""
     return(np.sqrt(np.sum(np.square(x))))
 
-def var_expl(P_svd, i): # variance explained over rows, columns
+# def var_expl(P_svd, i): # variance explained over rows, columns
+#     """A helper function to obtain vector lengths in a matrix decomposition"""
+#     s0 = P_svd[0][:, 0:i]
+#     s1 = P_svd[1][0:i]
+#     s2 = P_svd[2][0:i, :]
+#     P_reconstruct = np.matmul(np.matmul(s0, np.diag(s1)), s2)
+#     #Lcol = np.apply_along_axis(veclen, 0, P_reconstruct)
+#     #Lrow = np.apply_along_axis(veclen, 1, P_reconstruct)
+#     Lcol = np.sum(P_reconstruct**2, axis = 0)**0.5
+#     Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
+#     return([Lcol, Lrow])
+
+def var_expl(svd0, svd1, svd2, i): # variance explained over rows, columns
     """A helper function to obtain vector lengths in a matrix decomposition"""
-    s0 = P_svd[0][:, 0:i]
-    s1 = P_svd[1][0:i]
-    s2 = P_svd[2][0:i, :]
+    s0 = np.array(svd0.iloc[:, 0:i])
+    s1 = np.transpose(np.array(svd1.iloc[0:i, ]))[0]
+    s2 = np.transpose(np.array(svd2.iloc[:, 0:i]))
     P_reconstruct = np.matmul(np.matmul(s0, np.diag(s1)), s2)
-    #Lcol = np.apply_along_axis(veclen, 0, P_reconstruct)
-    #Lrow = np.apply_along_axis(veclen, 1, P_reconstruct)
     Lcol = np.sum(P_reconstruct**2, axis = 0)**0.5
     Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
     return([Lcol, Lrow])
+
 
 def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
     """A helper function to create matrix from saved matrix decomposition"""
@@ -653,7 +664,7 @@ class Transform:
         Saves output in R-friendly format
     """
 
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True, min_percent = sum([list(range(1, 20)), list(range(20, 100, 10)), [95, 99]], [])): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -669,8 +680,6 @@ class Transform:
             Boolean indicating whether to perform the Correspondence Analysis transformation before SVD. Default is True. 
         goodness_of_fit : bool
             Boolean indicating whether to create goodness of fit statistics. 
-        min_percent
-            List of values on the interval (0, 100) indicating minimum percentages of variance for reconstruction error plot
         """
 
         self.col_names = input_dataframe.columns
@@ -700,60 +709,29 @@ class Transform:
         #P_svd = randomized_svd(P.to_numpy(), n_components=ncomps, n_iter=n_iter, random_state = 0) # or dask svd for large data
         P_svd = randomized_svd(P, n_components=ncomps, n_iter=n_iter, n_oversamples = n_oversamples)
 
-        if goodness_of_fit:
-            L = list(range(1, ncomps+1, int(np.floor((ncomps+1)/10))))
-            if L[-1] != ncomps+1:
-                L.append(ncomps+1)
-            L.pop(0)
-            VE = [var_expl(P_svd, i) for i in [i for i in L]]
-            self.gof_gene = np.transpose(pd.DataFrame([x[0] for x in VE]))
-            self.gof_cell = np.transpose(pd.DataFrame([x[1] for x in VE]))
-            cnames = ['ncomps' + str(i) for i in L]
-            self.gof_gene.columns = cnames
-            self.gof_cell.columns = cnames
-            self.gof_gene.index = input_dataframe.loc[self.row_keep, self.col_keep].columns
-            self.gof_cell.index = input_dataframe.loc[self.row_keep, self.col_keep].index
+        self.cell_total_length = np.sum(P**2, axis = 1)**0.5
+        self.gene_total_length = np.sum(P**2, axis = 0)**0.5
+        self.ncomps = ncomps
 
-            self.gof_cell.insert(0, 'total_length', np.sum(P**2, axis = 1)**0.5)
-            self.gof_cell.insert(0, 'leverage', np.sum(P_svd[0]**2, axis = 1))
-            if transform:
-                self.gof_cell.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-                self.gof_cell.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-                self.gof_cell.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-                self.gof_cell.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
-                       
-            self.gof_gene.insert(0, 'total_length', np.sum(P**2, axis = 0)**0.5)
-            self.gof_gene.insert(0, 'leverage', np.sum(np.transpose(P_svd[2])**2, axis = 1))
-            if transform:
-                self.gof_gene.insert(0, 'mean_count', np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-                self.gof_gene.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-                self.gof_gene.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-                self.gof_gene.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
-            
-            def err_freq(gof, c, min_percent) :
-                L = gof.shape[0]
-                err = gof[c]**2/gof['total_length']**2 * 100
-                return([sum(1 for x in err if x > y)/L*100 for y in min_percent])
-            
-            def gof_plot(gof, cols, min_percent):
-                gp = np.transpose(pd.DataFrame([err_freq(gof, x, min_percent) for x in cols]))
-                gp.columns = cols
-                gp.insert(0, 'min_percent', min_percent)
-                gp = gp.melt('min_percent')
-                gp.insert(0, 'ncomps', [int(x) for x in gp['variable'].replace('ncomps', '', regex = True)])
-                return(gp)
-            self.gp_cell = gof_plot(self.gof_cell, cnames, min_percent)
-            self.gp_gene = gof_plot(self.gof_gene, cnames, min_percent)
+        if transform:
+            self.cell_raw_stats = pd.DataFrame({'mean_count': np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1)})
+            self.cell_raw_stats.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.cell_raw_stats.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.cell_raw_stats.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 1))
+            self.gene_raw_stats = pd.DataFrame({'mean_count': np.mean(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0)})
+            self.gene_raw_stats.insert(0, 'median_count', np.median(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gene_raw_stats.insert(0, 'sd_count', np.std(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
+            self.gene_raw_stats.insert(0, 'total_count', np.sum(np.array(input_dataframe.loc[self.row_keep, self.col_keep]), axis = 0))
 
-            def skew_quartile(X): 
-                q1 = np.quantile(X, 1/4)
-                q2 = np.quantile(X, 2/4)
-                q3 = np.quantile(X, 3/4)
-                return((q3 + q1 - 2*q2)/(q3 - q1))
-            
-            skew_cell = np.abs(np.apply_along_axis(skew_quartile, 0, P_svd[0]))
-            skew_gene = np.abs(np.apply_along_axis(skew_quartile, 0, np.transpose(P_svd[2])))
-            self.skew = pd.DataFrame({'skew_cell' : skew_cell, 'skew_gene': skew_gene}, index = range(1, ncomps + 1))
+        def skew_quartile(X): 
+            q1 = np.quantile(X, 1/4)
+            q2 = np.quantile(X, 2/4)
+            q3 = np.quantile(X, 3/4)
+            return((q3 + q1 - 2*q2)/(q3 - q1))
+        
+        skew_cell = np.abs(np.apply_along_axis(skew_quartile, 0, P_svd[0]))
+        skew_gene = np.abs(np.apply_along_axis(skew_quartile, 0, np.transpose(P_svd[2])))
+        self.skew = pd.DataFrame({'skew_cell' : skew_cell, 'skew_gene': skew_gene}, index = range(1, ncomps + 1))
 
         cnames = ['comp' + str(a) for a in range(1, ncomps + 1)]
         idx = self.row_names[self.row_keep]
@@ -779,7 +757,47 @@ class Transform:
         gene_coord = spherical_transform(ca_comps)
         self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
-    def umap(self, cell = True, gene = True, ncomp_cell:int = None, ncomp_gene:int = None):
+               
+    def goodness_of_fit(self, N: int = 10, min_percent = sum([list(range(1, 20)), list(range(20, 100, 10)), [95, 99]], [])):
+        """
+        Parameters
+        ----------
+        min_percent
+            List of values on the interval (0, 100) indicating minimum percentages of variance for reconstruction error plot
+        """
+
+        L = list(range(0, self.ncomps, int(np.floor((self.ncomps)/N))))
+        if L[-1] != self.ncomps:
+            L.append(self.ncomps)
+        L.pop(0)
+        VE = [var_expl(self.svd0, self.svd1, self.svd2, i) for i in [i for i in L]]
+        self.gof_gene = np.transpose(pd.DataFrame([x[0] for x in VE]))
+        self.gof_cell = np.transpose(pd.DataFrame([x[1] for x in VE]))
+        cnames = ['ncomps' + str(i) for i in L]
+        self.gof_gene.columns = cnames
+        self.gof_cell.columns = cnames
+        self.gof_gene.index = self.svd2.index
+        self.gof_cell.index = self.svd0.index
+        
+        self.gof_cell.insert(0, 'leverage', np.sum(self.svd0**2, axis = 1))   
+        self.gof_gene.insert(0, 'leverage', np.sum(self.svd2**2, axis = 1))
+        
+        def err_freq(gof, c, min_percent, total_length) :
+            L = gof.shape[0]
+            err = gof[c]**2/total_length**2 * 100
+            return([sum(1 for x in err if x > y)/L*100 for y in min_percent])
+        
+        def gof_plot(gof, cols, min_percent, total_length) :
+            gp = np.transpose(pd.DataFrame([err_freq(gof, x, min_percent, total_length) for x in cols]))
+            gp.columns = cols
+            gp.insert(0, 'min_percent', min_percent)
+            gp = gp.melt('min_percent')
+            gp.insert(0, 'ncomps', [int(x) for x in gp['variable'].replace('ncomps', '', regex = True)])
+            return(gp)
+        self.gp_cell = gof_plot(self.gof_cell, cnames, min_percent, self.cell_total_length)
+        self.gp_gene = gof_plot(self.gof_gene, cnames, min_percent, self.gene_total_length)
+
+    def umap(self, cell = True, gene = True, ncomp_cell : int = None, ncomp_gene : int = None) :
         """
         Peforms umap on cell_coord and /or gene_coord
 
@@ -827,10 +845,12 @@ class Transform:
              path, 
              svd = True, 
              cell_coord = True, 
-             gene_coord = True, 
+             gene_coord = True,
+             svd_components_skew = True, 
              cell_umap = True, 
              gene_umap = True, 
-             goodness_of_fit = True
+             goodness_of_fit = True,
+             goodness_of_fit_figure = True
              ):
         """
         Save R-friendly output
@@ -845,12 +865,16 @@ class Transform:
             Boolean indicating whether to save cell_coord output. Default is True
         gene_coord : bool
             Boolean indicating whether to save gene_coord output. Default is True
+        svd_components_skew : bool
+            Boolean indicating whether to save svd components skew output. Default is True
         cell_umap : bool
             Boolean indicating whether to save cell_umap output. Default is True
         gene_umap : bool
             Boolean indicating whether to save gene_umap output. Default is True
         goodness_of_fit : bool
             Boolean indicating whether to save goodnes of fit output. Default is True
+        goodness_of_fit_figure : bool
+            Boolean indicating whether to save goodness of fit figure. Default is True
         """
 
         pd.DataFrame({'row_keep':self.row_keep}, index = self.row_names).to_csv(path + 'row_keep.txt', index_label = 'ID')
@@ -867,6 +891,18 @@ class Transform:
         if gene_coord: 
             self.gene_coord.to_csv(path + 'gene_coord.txt.gz', index_label = 'ID')
 
+        if svd_components_skew:
+            self.skew.to_csv(path + 'svd_skew.txt.gz', index_label = 'component')
+            def skew_figure(X, path):
+                plot = sb.lineplot(x = range(1, len(X) + 1), y = X)
+                plot.set(title = 'SVD component skew')
+                plot = plot.get_figure()
+                plot.savefig(path)
+                plt.close()
+
+            skew_figure(self.skew['skew_cell'], path + 'svd_skew_cell.png')
+            skew_figure(self.skew['skew_gene'], path + 'svd_skew_gene.png')
+
         if cell_umap and hasattr(self, 'cell_umap'):
             self.cell_umap.to_csv(path + 'cell_umap.txt.gz', index_label = 'ID')
 
@@ -878,8 +914,8 @@ class Transform:
             self.gof_gene.to_csv(path + 'gof_gene.txt.gz', index_label = 'ID')
             self.gp_cell.to_csv(path + 'reconstruct_err_cell.txt.gz')
             self.gp_gene.to_csv(path + 'reconstruct_err_gene.txt.gz')
-            self.skew.to_csv(path + 'svd_skew.txt.gz', index_label = 'component')
-
+        
+        if goodness_of_fit_figure and hasattr(self, 'gof_cell'):
             def gof_figure(G, path): # G is self.gp_cell/self.gp_gene
                 G.insert(0, 'log_value', np.log10(G['value'] + 0.001))
                 #G(0, 'mp', pd.Categorical(T.gp_gene['min_percent']))
@@ -891,17 +927,6 @@ class Transform:
             
             gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
             gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
-
-            def skew_figure(X, path):
-                plot = sb.lineplot(x = range(1, len(X) + 1), y = X)
-                plot.set(title = 'SVD component skew')
-                plot = plot.get_figure()
-                plot.savefig(path)
-                plt.close()
-
-            skew_figure(self.skew['skew_cell'], path + 'svd_skew_cell.png')
-            skew_figure(self.skew['skew_gene'], path + 'svd_skew_gene.png')
-
     
 #################################################
 class Cluster:
