@@ -1060,8 +1060,9 @@ class Cluster:
         # # create graph
         graph = ig.Graph().Weighted_Adjacency(dotprod_thres, mode = 'undirected')
         # # betweeness, coreness and create clusters
-        BT = graph.betweenness()
+        BT = graph.betweenness(weights = 'weight')
         CN = graph.coreness()
+        Strength = graph.strength(vertices = graph.get_vertex_dataframe().index, weights = 'weight')
         
         def median(X):
             if len(X) > 2:
@@ -1080,6 +1081,7 @@ class Cluster:
 
         T.insert(0, 'BT', BT)
         T.insert(0, 'CN', CN)
+        T.insert(0, 'Strength', Strength)
         GN = [graph.neighbors(i) for i in range(0, graph.vcount())]
         BT_median = [median([BT[i] for i in GN[j]]) for j in range(0, graph.vcount())]
         BT_mad = [mad([BT[i] for i in GN[j]]) for j in range(0, graph.vcount())]
@@ -1091,8 +1093,14 @@ class Cluster:
         T.insert(0, 'CN_median', CN_median)
         T.insert(0, 'CN_mad', CN_mad)
 
+        Strength_median = [median([Strength[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        Strength_mad = [mad([Strength[i] for i in GN[j]]) for j in range(0, graph.vcount())]
+        T.insert(0, 'Strength_median', Strength_median)
+        T.insert(0, 'Strength_mad', Strength_mad)
+
         if graph.vcount() < 500: # in future, give more control over choice of graph clustering. 
-            clusWT = ig.Graph.community_walktrap(graph, weights = graph.es['weight'], steps = clus_steps).as_clustering().membership
+            w = np.array(graph.es['weight']).argsort().argsort() + 1
+            clusWT = ig.Graph.community_walktrap(graph, weights = (w**2)/100, steps = clus_steps).as_clustering().membership
         else:
             clusWT = ig.Graph.community_leiden(graph, resolution = 0.5).membership
         T.insert(0, 'clus', clusWT)
@@ -1100,7 +1108,7 @@ class Cluster:
         graph_membership = clus[0].replace(to_replace = list(T['duplicate']), value = list(T['clus']))
         self.membership_all = pd.DataFrame({'subcluster': clus[0]['membership'], 'graph_cluster': graph_membership['membership'], 'local_density': clus[2]['local_density']})
 
-        self.subcluster_points = T[[ 'CN', 'BT', 'CN_median', 'CN_mad', 'BT_median', 'BT_mad', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness', 'CN_median': 'coreness_median', 'CN_mad': 'coreness_mad', 'BT_median': 'betweeness_median', 'BT_mad': 'betweeness_mad'})
+        self.subcluster_points = T[[ 'CN', 'BT', 'Strength', 'CN_median', 'CN_mad', 'BT_median', 'BT_mad', 'Strength_median', 'Strength_mad', 'clus', 'duplicate']].rename(columns = {'duplicate': 'subcluster', 'clus': 'graph_cluster', 'CN': 'coreness', 'BT': 'betweenness', 'CN_median': 'coreness_median', 'CN_mad': 'coreness_mad', 'BT_median': 'betweeness_median', 'BT_mad': 'betweeness_mad'})
 
         A = self.membership_all['subcluster'].value_counts()
         B = A.index
@@ -1244,7 +1252,7 @@ class NeighbourhoodFlow:
         Save R-friendly output    
     """
 
-    def __init__(self, cell_cluster: Cluster, XY: pd.DataFrame, K_nn: int, dist_thres: float, cell_join_id: str):
+    def __init__(self, cell_cluster: Cluster, XY: pd.DataFrame, K_nn: int, dist_thres: float, cell_join_id: str, NN_k : int = 5):
         """
         Parameters
         ----------
@@ -1301,6 +1309,30 @@ class NeighbourhoodFlow:
 
         self.neighbourhood_flow = pd.DataFrame(n_mtx, index = np.unique(XY['subcluster']), columns = np.unique(XY['subcluster']))
 
+    #def neighbourhood_flow_graph(self, cell_cluster: Cluster, NN_k : int = 5):
+        def row_norm(x):
+            s = np.sum(x)
+            if s == 0:
+                return(x)
+            else:
+                return(x/s)
+        
+        def NN(x, k):
+            y = x.copy()
+            r = (-y).argsort().argsort()
+            r = r > k - 1
+            y[r] = 0
+            return(y)
+        NF = np.apply_along_axis(row_norm, 1, self.neighbourhood_flow)
+        self.NF = np.apply_along_axis(NN, 1, NF, NN_k)
+        NF_graph = ig.Graph().Weighted_Adjacency(self.NF, mode = 'directed')
+        w = np.array(NF_graph.es['weight']).argsort().argsort() + 1
+        clus = ig.Graph.community_walktrap(NF_graph, weights = (w**2)/100, steps = 5).as_clustering().membership
+        indeg = NF_graph.indegree()
+        idx = self.neighbourhood_flow.index
+        self.NF_clus = pd.DataFrame({'clus': clus, 'indegree': indeg}, index = idx)
+        self.NF = pd.DataFrame(self.NF, index = idx, columns = idx)
+
     def save(self, path):
         """
         Save R-friendly output
@@ -1311,6 +1343,6 @@ class NeighbourhoodFlow:
             String indicating path to save directory
         """
 
-        self.neighbourhood_flow.to_csv(path + 'neighbourhood_flow.txt.gz', index_label = 'ID')
-
-
+        self.neighbourhood_flow.to_csv(path + 'neighbourhood_flow_raw_frequency.txt.gz', index_label = 'ID')
+        self.NF.to_csv(path + 'neighbourhood_flow_graph.txt.gz', index_label = 'ID')
+        self.NF_clus.to_csv(path + 'spatial_niche.txt.gz', index_label = 'ID')
