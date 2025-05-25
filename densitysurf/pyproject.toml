@@ -3,7 +3,7 @@ name = "densitysurf"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "kristenfeher",email = "kristenmf@gmail.com"}
+    {name = "kristenfeher"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"
