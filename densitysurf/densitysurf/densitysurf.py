@@ -664,7 +664,7 @@ class Transform:
         Saves output in R-friendly format
     """
 
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, goodness_of_fit: bool = True): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -924,6 +924,7 @@ class Transform:
                 plot = plot.get_figure()
                 plot.savefig(path, pad_inches = 0.5, bbox_inches = 'tight', dpi = 500)
                 plt.close()
+                G.drop('log_value', axis = 1)
             
             gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
             gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
@@ -948,7 +949,7 @@ class Cluster:
         Save R-friendly output
     """
 
-    def __init__(self, coords: Transform, K_nn: int = 5, clus_steps = 1000, mode = 'cells', similarity_threshold: float = 0.2, p: int = 2, metric : str = 'minkowski', ncomp_clus: int = 0, prune : str = 'backbone', alpha : float = 0.05, prune_K_nn : int = 5): 
+    def __init__(self, coords: Transform, K_nn: int = 5, clus_steps = 5, mode = 'cells', similarity_threshold: float = 0.2, p: int = 2, metric : str = 'minkowski', ncomp_clus: int = 0, prune : str = 'threshold', prune_K_nn : int = 5): 
         """
         Parameters
         ----------
@@ -971,10 +972,8 @@ class Cluster:
             Parameter used to choose the distance metric. Default is 'minkowski'. 'chebyshev' is equivalent to the limit of the minkowski distance as p tends to infinity. The list of acceptable metrics can be found in scipy.spatial.distance
         prune : str
             Parameter used to choose thte graph pruning method. Options are 'threshold' for a simple threshold using the parameter similarity_threshold, 'NN' to choose the nearest neighbours, and 'backbone' a node degree distribution preserving method. 
-        alpha : float
-            Parameter used to threshold p values of backbone pruning method
         prune_K_nn : int
-            Parameter used to threshold using K_nn method
+            Parameter used to threshold using K_nn method. ignored if prune = 'threshold'
             
         """
 
@@ -1035,25 +1034,25 @@ class Cluster:
             
             dotprod_thres = similarity_NN_threshold_symmetric(dotprod, prune_K_nn)
 
-        if prune == 'backbone':
-            def pval(i, j, ki, t, sim):
-                p = ki[i]*ki[j]/(2*t**2)
-                return(1 - binom.cdf(sim[i, j], t, p))
+        # if prune == 'backbone':
+        #     def pval(i, j, ki, t, sim):
+        #         p = ki[i]*ki[j]/(2*t**2)
+        #         return(1 - binom.cdf(sim[i, j], t, p))
             
-            def binom_backbone(sim, alpha):
-                np.fill_diagonal(sim, 0)
-                sim = np.round(sim, 2)*100
-                ki = np.sum(sim, 0)
-                t = sum(ki) * 0.5
-                pval_mtx = [[pval(i, j, ki, t, sim) for j in range(0, len(ki))] for i in range(0, len(ki))]
-                pval_mtx = pd.DataFrame(pval_mtx)
-                pval_mtx[pval_mtx > alpha] = 1
-                pval_mtx[pval_mtx <= alpha] = 2
-                pval_mtx = pval_mtx - 1
-                return(sim * pval_mtx)
-            dotprod_thres = dotprod.copy()
-            dotprod_thres[dotprod_thres < similarity_threshold] = 0
-            dotprod_thres = binom_backbone(dotprod_thres, alpha)
+        #     def binom_backbone(sim, alpha):
+        #         np.fill_diagonal(sim, 0)
+        #         sim = np.round(sim, 2)*100
+        #         ki = np.sum(sim, 0)
+        #         t = sum(ki) * 0.5
+        #         pval_mtx = [[pval(i, j, ki, t, sim) for j in range(0, len(ki))] for i in range(0, len(ki))]
+        #         pval_mtx = pd.DataFrame(pval_mtx)
+        #         pval_mtx[pval_mtx > alpha] = 1
+        #         pval_mtx[pval_mtx <= alpha] = 2
+        #         pval_mtx = pval_mtx - 1
+        #         return(sim * pval_mtx)
+        #     dotprod_thres = dotprod.copy()
+        #     dotprod_thres[dotprod_thres < similarity_threshold] = 0
+        #     dotprod_thres = binom_backbone(dotprod_thres, alpha)
 
         self.subcluster_similarity_prune = pd.DataFrame(dotprod_thres, index = dotprod_index, columns = dotprod_index).rename_axis(index = None, columns = None)
         ##################################
@@ -1252,20 +1251,23 @@ class NeighbourhoodFlow:
         Save R-friendly output    
     """
 
-    def __init__(self, cell_cluster: Cluster, XY: pd.DataFrame, K_nn: int, dist_thres: float, cell_join_id: str, NN_k : int = 5):
+    def __init__(self, cell_cluster: Cluster, XY: pd.DataFrame, K_nn: int, dist_thres: float, cell_join_id: str = None, edge_quantile_threshold : float = 0.99):
         """
         Parameters
         ----------
         cell_cluster : Cluster
             An instance of the Cluster class
         XY : pd.DataFrame
-            spatial X-Y coordinates of each cell in cell_cluster
+            spatial X-Y coordinates of each cell in cell_cluster. The columns must be specified as 'X' and 'Y' and the index labelling the cells should correspond to the index of the cells in the original input data (in Transform). 
+            (default). Alternatively, the cell ID can be contained in a third column. 
         K_nn : int
             The number of spatial neighbours with which to create the neighbourhood_flow matrix
         dist_thres : float
             The maximum nearest neighbour distance that is included in the spatial neighbours
         cell_join_id: str
-            The name of the column with cell labels in cell_cluster and XY
+            The name of the column with cell labels in cell_cluster and XY. Default is None, corresponding to XY.index being used as the cell label. Otherwise the cell label should be supplied in a third column of XY. 
+        edge_quantile_threshold: float
+            The edge weight quantile at which to threshold the neighbourhood flow graph
         """
 
         XY = XY.join(cell_cluster.membership_all, on = cell_join_id, how = 'inner')
@@ -1299,32 +1301,28 @@ class NeighbourhoodFlow:
                 n_mtx[s1, t_names[j]] = n_mtx[s1, t_names[j]] + t_count[j]
         n_mtx = np.apply_along_axis(func, 1, n_mtx)
 
-        for i in range(0, ncol):
-            for j in range(0, ncol):
-                if i < j:
-                    if n_mtx[i, j] < n_mtx[j, i]:
-                        n_mtx[i, j] = 0
-                    elif n_mtx[j, i] < n_mtx[i, j]:
-                        n_mtx[j, i] = 0
+        # why is this step done? wrong?
+        # for i in range(0, ncol):
+        #     for j in range(0, ncol):
+        #         if i < j:
+        #             if n_mtx[i, j] < n_mtx[j, i]:
+        #                 n_mtx[i, j] = 0
+        #             elif n_mtx[j, i] < n_mtx[i, j]:
+        #                 n_mtx[j, i] = 0
 
         self.neighbourhood_flow = pd.DataFrame(n_mtx, index = np.unique(XY['subcluster']), columns = np.unique(XY['subcluster']))
 
-    #def neighbourhood_flow_graph(self, cell_cluster: Cluster, NN_k : int = 5):
-        def row_norm(x):
-            s = np.sum(x)
-            if s == 0:
-                return(x)
-            else:
-                return(x/s)
-        
-        def NN(x, k):
-            y = x.copy()
-            r = (-y).argsort().argsort()
-            r = r > k - 1
-            y[r] = 0
-            return(y)
-        NF = np.apply_along_axis(row_norm, 1, self.neighbourhood_flow)
-        self.NF = np.apply_along_axis(NN, 1, NF, NN_k)
+        # def NN(x, k):
+        #     y = x.copy()
+        #     r = (-y).argsort().argsort()
+        #     r = r > k - 1
+        #     y[r] = 0
+        #     return(y)
+        #NF = np.apply_along_axis(row_norm, 1, self.neighbourhood_flow)
+        #self.NF = np.apply_along_axis(NN, 1, NF, NN_k)
+        self.NF = n_mtx.copy()
+        Q = np.quantile(self.NF[self.NF > 0], edge_quantile_threshold)
+        self.NF[self.NF < Q] = 0
         NF_graph = ig.Graph().Weighted_Adjacency(self.NF, mode = 'directed')
         w = np.array(NF_graph.es['weight']).argsort().argsort() + 1
         clus = ig.Graph.community_walktrap(NF_graph, weights = (w**2)/100, steps = 5).as_clustering().membership
