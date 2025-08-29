@@ -677,7 +677,7 @@ class Cluster:
             else:
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
         else:
-            print('mode is either cells or genes')
+            raise ValueError('mode is either cells or genes')
 
         self.mode = mode
 
@@ -781,12 +781,45 @@ class Cluster:
         B = A.index
         C = self.subcluster_points['subcluster'].replace(to_replace = B, value = A)
         self.subcluster_points.insert(0, 'subcluster_count', C)
+
+    def local_goodness_of_fit(self, coords: Transform, ncomp : int = 3):
+        if self.mode == 'cells':
+            if self.ncomp_clus == 0:
+                self.lgof = local_goodness_of_fit(self.membership_all, coords.cell_coord, ncomp)
+            elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.cell_coord.shape[1]:
+                ca_comps = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
+                ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
+                cnames = ['cell_coord' + str(a) for a in range(1, self.ncomp_clus + 1)]
+                idx = coords.row_names[coords.row_keep]
+                cell_coord = spherical_transform(ca_comps)
+                cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
+                self.lgof = local_goodness_of_fit(self.membership_all, cell_coord, ncomp)
+            else: 
+                raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
+                
+        if self.mode == 'genes' :
+            if self.ncomp_clus == 0:
+                self.lgof = local_goodness_of_fit(self.membership_all, coords.gene_coord, ncomp)
+            elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.gene_coord.shape[1]:
+                ca_comps = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
+                ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
+                cnames = ['cell_coord' + str(a) for a in range(1, self.ncomp_clus + 1)]
+                idx = coords.row_names[coords.row_keep]
+                gene_coord = spherical_transform(ca_comps)
+                gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
+                self.lgof = local_goodness_of_fit(self.membership_all, gene_coord, ncomp)
+            else: 
+                raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
+            
+        else:
+            raise ValueError('mode is either cells or genes')
                
     def save(self, 
              path, 
              membership_all = True, 
              subcluster_points = True,
-             subcluster_similarity = True
+             subcluster_similarity = True, 
+             lgof = True
              ):
         """
         Save R-friendly output
@@ -801,6 +834,8 @@ class Cluster:
             Boolean indicating whether to save subcluster_points output
         subcluster_similarity : bool
             Boolean indicating whether to save subcluster_similarity output
+        lgof : bool
+            Boolean indicating whether to save local goodness of fit matrix
         """
 
         if membership_all:
@@ -812,6 +847,9 @@ class Cluster:
         if subcluster_similarity:
             self.subcluster_similarity.to_csv(path + 'subcluster_similarity.txt.gz', index_label = 'ID')
             self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
+
+        if lgof:
+            self.lgof[0].to_csv(path + self.mode + '_lgof.txt.gz', index_label = 'ID')
 
 ########################################################
 class SpecificityNetwork:
