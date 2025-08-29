@@ -31,7 +31,9 @@ import seaborn as sb
 import matplotlib.pyplot as plt
 from scipy.stats import binom
 
-__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+#__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+
 
 # def spherical_transform(X):
 #     """Helper function to normlise a vector to length one"""
@@ -242,7 +244,7 @@ def MultiSampleConcat(path_names, sample_ids = None): # give option to just use 
     return(P)
 
 
-def local_goodness_of_fit(membership_matrix, coordinate_matrix, ncomp:int = 3):
+def local_gof(membership_matrix, coordinate_matrix, ncomp:int = 3):
     """A function to calculate local goodness of fit within clusters
     
     Parameters
@@ -258,45 +260,41 @@ def local_goodness_of_fit(membership_matrix, coordinate_matrix, ncomp:int = 3):
         Number of cluster-wise svd components to use
     
     """
-
-
     proj_dist_matrix = []
-    S = []
+    sval_list = []
 
     for i in range(0, np.max(membership_matrix['subcluster']) + 1):
-        clus_ID = membership_matrix.loc[membership_matrix['subcluster'] == i, 'ID']
+        clus_ID = membership_matrix.loc[membership_matrix['subcluster'] == i].index
         data1 = coordinate_matrix.loc[clus_ID]
-        data1 = data1.drop('ID', axis = 1)
+        #data1 = data1.drop('ID', axis = 1)
         if data1.shape[0] > 5:
             svd_data1 = np.linalg.svd(data1, full_matrices=False)
-            svd_proj = np.matmul(coordinate_matrix.drop('ID', axis = 1), np.transpose(svd_data1[2][range(0, ncomp), :]))
+            svd_proj = np.matmul(coordinate_matrix, np.transpose(svd_data1[2][range(0, ncomp), :]))
             proj_dist = pd.DataFrame(np.sum(np.array(svd_proj)**2, axis = 1)**0.5, index = svd_proj.index)
             svals = svd_data1[1]
         else:
             data_mean = data1.mean(axis = 0)
             data_mean = data_mean/np.sqrt(np.sum(data_mean**2))
-            proj_dist = np.matmul(coordinate_matrix.drop('ID', axis = 1), data_mean)
+            proj_dist = np.matmul(coordinate_matrix, data_mean)
             svals = None
         proj_dist_matrix.append(proj_dist)
-        S.append(svals)
+        sval_list.append(svals)
         
-
     proj_dist_matrix = pd.concat(proj_dist_matrix, axis = 1)
     proj_max = proj_dist_matrix.max(axis = 1)
     proj_mean = proj_dist_matrix.mean(axis = 1)
 
     subcluster_proj = []
 
-    for i in range(0, np.max(cell_mem['subcluster']) + 1):
-        clus_ID = cell_mem.loc[cell_mem['subcluster'] == i, 'ID']
+    for i in range(0, np.max(membership_matrix['subcluster']) + 1):
+        clus_ID = membership_matrix.loc[membership_matrix['subcluster'] == i].index
         subcluster_proj.append(proj_dist_matrix.loc[clus_ID].iloc[:, i])
 
     subcluster_proj = pd.DataFrame({'clus': pd.concat(subcluster_proj)})
     gof_df = pd.DataFrame({'mean': proj_mean, 'max': proj_max})
     gof_df = gof_df.join(subcluster_proj)
 
-    return([gof_df, S])
-
+    return([gof_df, sval_list])
 
 ##############################################
 class Transform:
@@ -518,7 +516,9 @@ class Transform:
              cell_umap = True, 
              gene_umap = True, 
              goodness_of_fit = True,
-             goodness_of_fit_figure = True
+             goodness_of_fit_figure = True, 
+             cell_raw_stats = True,
+             gene_raw_stats = True
              ):
         """
         Save R-friendly output
@@ -543,6 +543,10 @@ class Transform:
             Boolean indicating whether to save goodnes of fit output. Default is True
         goodness_of_fit_figure : bool
             Boolean indicating whether to save goodness of fit figure. Default is True
+        cell_raw_stats: bool
+            Boolean indicating whether to save cell raw stats
+        gene_raw_stats: bool
+            Boolean indicating whether to save gene raw stats
         """
 
         pd.DataFrame({'row_keep':self.row_keep}, index = self.row_names).to_csv(path + 'row_keep.txt', index_label = 'ID')
@@ -582,7 +586,13 @@ class Transform:
             self.gof_gene.to_csv(path + 'gof_gene.txt.gz', index_label = 'ID')
             self.gp_cell.to_csv(path + 'reconstruct_err_cell.txt.gz')
             self.gp_gene.to_csv(path + 'reconstruct_err_gene.txt.gz')
+
+        if cell_raw_stats and hasattr(self, 'cell_raw_stats'):
+            self.cell_raw_stats.to_csv(path + 'cell_raw_stats.txt.gz', index_label = 'ID')
         
+        if gene_raw_stats and hasattr(self, 'gene_raw_stats'):
+            self.gene_raw_stats.to_csv(path + 'gene_raw_stats.txt.gz', index_label = 'ID')
+
         if goodness_of_fit_figure and hasattr(self, 'gof_cell'):
             def gof_figure(G, path): # G is self.gp_cell/self.gp_gene
                 G.insert(0, 'log_value', np.log10(G['value'] + 0.001))
@@ -785,7 +795,7 @@ class Cluster:
     def local_goodness_of_fit(self, coords: Transform, ncomp : int = 3):
         if self.mode == 'cells':
             if self.ncomp_clus == 0:
-                self.lgof = local_goodness_of_fit(self.membership_all, coords.cell_coord, ncomp)
+                self.lgof = local_gof(self.membership_all, coords.cell_coord, ncomp)
             elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.cell_coord.shape[1]:
                 ca_comps = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
                 ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
@@ -793,27 +803,24 @@ class Cluster:
                 idx = coords.row_names[coords.row_keep]
                 cell_coord = spherical_transform(ca_comps)
                 cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
-                self.lgof = local_goodness_of_fit(self.membership_all, cell_coord, ncomp)
+                self.lgof = local_gof(self.membership_all, cell_coord, ncomp)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
                 
         if self.mode == 'genes' :
             if self.ncomp_clus == 0:
-                self.lgof = local_goodness_of_fit(self.membership_all, coords.gene_coord, ncomp)
+                self.lgof = local_gof(self.membership_all, coords.gene_coord, ncomp)
             elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.gene_coord.shape[1]:
                 ca_comps = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
                 ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
-                cnames = ['cell_coord' + str(a) for a in range(1, self.ncomp_clus + 1)]
-                idx = coords.row_names[coords.row_keep]
+                cnames = ['gene_coord' + str(a) for a in range(1, self.ncomp_clus + 1)]
+                idx = coords.col_names[coords.col_keep]
                 gene_coord = spherical_transform(ca_comps)
                 gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
-                self.lgof = local_goodness_of_fit(self.membership_all, gene_coord, ncomp)
+                self.lgof = local_gof(self.membership_all, gene_coord, ncomp)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
-            
-        else:
-            raise ValueError('mode is either cells or genes')
-               
+           
     def save(self, 
              path, 
              membership_all = True, 
@@ -848,7 +855,7 @@ class Cluster:
             self.subcluster_similarity.to_csv(path + 'subcluster_similarity.txt.gz', index_label = 'ID')
             self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
 
-        if lgof:
+        if lgof and hasattr(self, 'lgof'):
             self.lgof[0].to_csv(path + self.mode + '_lgof.txt.gz', index_label = 'ID')
 
 ########################################################
