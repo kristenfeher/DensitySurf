@@ -938,18 +938,18 @@ class SpecificityNetwork:
             gc = coords.gene_coord.loc[genes.subcluster_points.index]
         elif cells.ncomp_clus > 0 and cells.ncomp_clus <= coords.cell_coord.shape[1]:
             # cells
-            cc = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
+            cc = np.transpose((np.transpose(np.array(coords.svd0.loc[cells.subcluster_points.index])) * np.array(coords.svd1)))
             cc = cc[:, range(0, cells.ncomp_clus)]
             cnames = ['cell_coord' + str(a) for a in range(1, cells.ncomp_clus + 1)]
-            idx = coords.row_names[coords.row_keep]
+            idx = cells.subcluster_points.index
             cc = spherical_transform(cc)
             cc = pd.DataFrame(cc, index = idx, columns = cnames)
 
             # genes
-            gc = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
+            gc = np.transpose((np.transpose(np.array(coords.svd2.loc[genes.subcluster_points.index])) * np.array(coords.svd1)))
             gc = gc[:, range(0, cells.ncomp_clus)]
             cnames = ['gene_coord' + str(a) for a in range(1, cells.ncomp_clus + 1)]
-            idx = coords.col_names[coords.col_keep]
+            idx = genes.subcluster_points.index
             gc = spherical_transform(gc)
             gc = pd.DataFrame(gc, index = idx, columns = cnames)
 
