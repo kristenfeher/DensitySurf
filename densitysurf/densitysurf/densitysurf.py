@@ -891,15 +891,72 @@ class SpecificityNetwork:
             Default is 0.2
 
         """
+
+
+# self.ncomp_clus = ncomp_clus
+#         self.p = p
+#         self.metric = metric
+
+#         K_nn = K_nn + 1
+#         if mode == 'cells':
+#             if ncomp_clus == 0:
+#                 clus = NN_density_cluster(coords.cell_coord, K_nn = K_nn, p = p, metric = metric)
+#             elif ncomp_clus > 1 and ncomp_clus <= coords.cell_coord.shape[1]:
+#                 ca_comps = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
+#                 ca_comps = ca_comps[:, range(0, ncomp_clus)]
+#                 cnames = ['cell_coord' + str(a) for a in range(1, ncomp_clus + 1)]
+#                 idx = coords.row_names[coords.row_keep]
+#                 cell_coord = spherical_transform(ca_comps)
+#                 cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
+#                 clus = NN_density_cluster(cell_coord, K_nn = K_nn, p = p, metric=metric)
+#             else: 
+#                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
+#         elif mode == 'genes':
+#             if ncomp_clus == 0:
+#                 clus = NN_density_cluster(coords.gene_coord, K_nn = K_nn, p = p, metric = metric)
+#             elif ncomp_clus > 1 and ncomp_clus <= coords.gene_coord.shape[1]:
+#                 ca_comps = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
+#                 ca_comps = ca_comps[:, range(0, ncomp_clus)]
+#                 cnames = ['gene_coord' + str(a) for a in range(1, ncomp_clus + 1)]
+#                 idx = coords.col_names[coords.col_keep]
+#                 gene_coord = spherical_transform(ca_comps)
+#                 gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
+#                 clus = NN_density_cluster(gene_coord, K_nn = K_nn, p = p, metric = metric)
+#             else:
+#                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
+#         else:
+#             raise ValueError('mode is either cells or genes')
+
+
+
         if cells.ncomp_clus != genes.ncomp_clus:
             raise ValueError("Cell clustering and gene clustering not performed on same number of components (controlled by ncomp_clus argument of Cluster)")
 
 
-        cc = coords.cell_coord.loc[cells.subcluster_points.index]
-        gc = coords.gene_coord.loc[genes.subcluster_points.index]
-        if cells.ncomp_clus > 0:
-            cc = cc.iloc[:, range(0, cells.ncomp_clus)]
-            gc = gc.iloc[:, range(0, genes.ncomp_clus)]
+        if cells.ncomp_clus == 0:
+            cc = coords.cell_coord.loc[cells.subcluster_points.index]
+            gc = coords.gene_coord.loc[genes.subcluster_points.index]
+        elif cells.ncomp_clus > 0 and cells.ncomp_clus <= coords.cell_coord.shape[1]:
+            # cells
+            cc = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
+            cc = cc[:, range(0, cells.ncomp_clus)]
+            cnames = ['cell_coord' + str(a) for a in range(1, cells.ncomp_clus + 1)]
+            idx = coords.row_names[coords.row_keep]
+            cc = spherical_transform(cc)
+            cc = pd.DataFrame(cc, index = idx, columns = cnames)
+
+            # genes
+            gc = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
+            gc = gc[:, range(0, cells.ncomp_clus)]
+            cnames = ['gene_coord' + str(a) for a in range(1, cells.ncomp_clus + 1)]
+            idx = coords.col_names[coords.col_keep]
+            gc = spherical_transform(gc)
+            gc = pd.DataFrame(gc, index = idx, columns = cnames)
+
+            #cc = cc.iloc[:, range(0, cells.ncomp_clus)]
+            #gc = gc.iloc[:, range(0, genes.ncomp_clus)]
+        else:
+            raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
         cnames = ['c' + str(K) for K in cells.subcluster_points['subcluster']]
         gnames = ['g' + str(K) for K in genes.subcluster_points['subcluster']]
 
