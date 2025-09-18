@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import binom
 
 #__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
-__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
 
 # def spherical_transform(X):
@@ -44,9 +44,7 @@ def spherical_transform(X):
     return(np.transpose(np.transpose(X) * 1/np.sum(X**2, axis = 1)**0.5))
 
 def ca_transform(input_dataframe: pd.DataFrame): #input_dataframe must be pd.DataFrame
-
     """
-
     Parameters
     ----------
     input_dataframe: pd.DataFrame
@@ -68,7 +66,6 @@ def ca_transform(input_dataframe: pd.DataFrame): #input_dataframe must be pd.Dat
     rc = np.outer(rm[row_keep], cm[col_keep])
     P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
     return(pd.DataFrame(P, index = input_dataframe.index[row_keep], columns = input_dataframe.columns[col_keep]))
-
 
 def NPN(I, ind, dist, rho):
     """Helper function for NN_density_cluster"""
@@ -158,7 +155,6 @@ def var_expl(svd0, svd1, svd2, i): # variance explained over rows, columns
     Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
     return([Lcol, Lrow])
 
-
 def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
     """A helper function to create matrix from saved matrix decomposition"""
     if not pickle:
@@ -179,70 +175,6 @@ def reconstruct(path_name, pickle = False): # give option to use pickled Transfo
     P = np.matmul(np.matmul(np.array(s0), np.diag(np.transpose(np.array(s1))[0, ])), np.transpose(np.array(s2)))
     P = pd.DataFrame(P, index = s0.index, columns = s2.index)
     return(P)
-
-def directory_structure(path):
-    """A function to create an output directory structure"""
-    if not os.path.isdir(path + 'output/'):
-        os.mkdir(path + 'output/')
-    else:
-        print("The output directory already exists.")
-    if not os.path.isdir(path + 'output/transform'):
-        os.mkdir(path + 'output/transform')
-    if not os.path.isdir(path + 'output/cells'):
-        os.mkdir(path + 'output/cells')
-    if not os.path.isdir(path + 'output/genes'):
-        os.mkdir(path + 'output/genes')
-    if not os.path.isdir(path + 'output/specificity_network'):
-        os.mkdir(path + 'output/specificity_network')
-    if not os.path.isdir(path + 'output/figures'):
-        os.mkdir(path + 'output/figures')
-    if not os.path.isdir(path + 'output/neighbourhood_flow'):
-        os.mkdir(path + 'output/neighbourhood_flow')
-
-    if (
-        os.listdir(path + 'output/transform') != [] or
-        os.listdir(path + 'output/cells') != [] or
-        os.listdir(path + 'output/genes') != [] or
-        os.listdir(path + 'output/specificity_network') != [] or
-        os.listdir(path + 'output/figures') != [] or
-        os.listdir(path + 'output/neighbourhood_flow') != [] 
-        ):
-        raise FileExistsError("Directories already contain results. \nYou will overwrite these results if you proceed. \nPlease consider creating a new parent directory")
-      
-def MultiSampleConcat(path_names, sample_ids = None): # give option to just use exemplar cells # give warning in docs that columns with duplicated names are deleted
-    """A function to concatenate transformed samples.
-    
-    Parameters
-    ----------
-    path_names : list
-        A list of strings with path names of matrix decomposition location
-    sample_ids : list
-        An optional list of strings with sample labels to include in DataFrame index
-
-    Returns
-    -------
-
-    pd.DataFrame
-        A DataFrame with concatenated samples
-
-    """
-    
-    P = [reconstruct(p) for p in path_names]
-
-    colnames = [list(p.columns[~p.columns.duplicated()]) for p in P]
-    colnames_intersection = list(set.intersection(*map(set, colnames)))
-
-    P = [p.loc[:, ~p.columns.duplicated()][colnames_intersection] for p in P]
-
-    if sample_ids == None:
-        sample_ids = range(0, len(P))
-
-    for i in sample_ids:
-        P[i].index = P[i].index + '_' + str(i)
-
-    P = pd.concat(P)
-    return(P)
-
 
 def local_gof(membership_matrix, coordinate_matrix, ncomp:int = 3):
     """A function to calculate local goodness of fit within clusters
@@ -329,7 +261,6 @@ class Transform:
     save(path, svd = True, cell_coord = True, gene_coord = True, cell_umap = True, gene_umap = True, goodness_of_fit = True)
         Saves output in R-friendly format
     """
-
     def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True): #input_dataframe must be pd.DataFrame
         """
         Parameters
@@ -347,17 +278,8 @@ class Transform:
         goodness_of_fit : bool
             Boolean indicating whether to create goodness of fit statistics. 
         """
-
         self.col_names = input_dataframe.columns
         self.row_names = input_dataframe.index
-  
-        # normalise, row and columns masses
-        # don't actually need this if transform == False, but just keep it for consistency
-        # D1 = input_dataframe/(input_dataframe.sum().sum())
-        # cm = D1.sum(axis = 0)
-        # self.col_keep = cm != 0
-        # rm = D1.sum(axis = 1)
-        # self.row_keep = rm != 0
 
         D1 = np.array(input_dataframe)
         D1 = D1/D1.sum()
@@ -803,7 +725,8 @@ class Cluster:
                 idx = coords.row_names[coords.row_keep]
                 cell_coord = spherical_transform(ca_comps)
                 cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
-                self.lgof = local_gof(self.membership_all, cell_coord, ncomp)
+                lgof = local_gof(self.membership_all, cell_coord, ncomp)
+                self.membership_all = self.membership_all.merge(lgof[0], left_index=True, right_index=True)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
                 
@@ -817,16 +740,33 @@ class Cluster:
                 idx = coords.col_names[coords.col_keep]
                 gene_coord = spherical_transform(ca_comps)
                 gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
-                self.lgof = local_gof(self.membership_all, gene_coord, ncomp)
+                lgof = local_gof(self.membership_all, gene_coord, ncomp)
+                self.membership_all = self.membership_all.merge(lgof[0], left_index=True, right_index=True)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
-           
+            
+    def cell_exemplar_points(self, input_dataframe: pd.DataFrame, transform: Transform):
+        if self.mode == 'genes':
+            print("Method only valid for cells")
+
+        D1 = np.array(input_dataframe)
+        D1 = D1/D1.sum()
+        cm = np.sum(D1, axis = 0)
+        col_keep = cm != 0
+        rm = np.sum(D1, axis = 1)
+        row_keep = rm != 0
+        rc = np.outer(rm[row_keep], cm[col_keep])
+        P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
+        P = pd.DataFrame(P, index = input_dataframe.index[row_keep], columns = input_dataframe.columns[col_keep])
+        self.P = P.loc[self.subcluster_points.index, :]
+          
     def save(self, 
              path, 
              membership_all = True, 
              subcluster_points = True,
              subcluster_similarity = True, 
-             lgof = True
+             #lgof = True, 
+             cell_exemplar_points = True
              ):
         """
         Save R-friendly output
@@ -855,8 +795,11 @@ class Cluster:
             self.subcluster_similarity.to_csv(path + 'subcluster_similarity.txt.gz', index_label = 'ID')
             self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
 
-        if lgof and hasattr(self, 'lgof'):
-            self.lgof[0].to_csv(path + self.mode + '_lgof.txt.gz', index_label = 'ID')
+        #if lgof and hasattr(self, 'lgof'):
+        #    self.lgof[0].to_csv(path + 'lgof.txt.gz', index_label = 'ID')
+
+        if cell_exemplar_points and hasattr(self, 'cell_exemplar_points'):
+            self.P.to_csv(path + 'cell_exemplar_points.txt.gz', index_label = 'ID')
 
 ########################################################
 class SpecificityNetwork:
