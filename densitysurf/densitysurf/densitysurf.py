@@ -261,7 +261,7 @@ class Transform:
     save(path, svd = True, cell_coord = True, gene_coord = True, cell_umap = True, gene_umap = True, goodness_of_fit = True)
         Saves output in R-friendly format
     """
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, sample_id: str = '', sample_id_sep = '_'): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -278,15 +278,6 @@ class Transform:
         goodness_of_fit : bool
             Boolean indicating whether to create goodness of fit statistics. 
         """
-
-        if isinstance(sample_id, str):
-            if sample_id != '':
-                if isinstance(sample_id_sep, str):
-                    input_dataframe.columns = input_dataframe.columns.astype(str) + sample_id_sep + sample_id
-                else:
-                    raise TypeError("sample_id_sep must be a string")
-            else:
-                raise TypeError("sample_id must be a string")
 
         self.col_names = input_dataframe.columns
         self.row_names = input_dataframe.index
@@ -755,28 +746,41 @@ class Cluster:
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
             
-    def cell_exemplar_points(self, input_dataframe: pd.DataFrame, transform: Transform):
+    def cell_exemplar_transform(self, input_dataframe: pd.DataFrame, transform: bool = True):
+        """
+        Extract cell subcluster points from CA transformed raw data
+
+        Parameters
+        ----------
+        input_dataframe: pd.DataFrame
+            The raw data used to create cell clustering
+        """
         if self.mode == 'genes':
             print("Method only valid for cells")
 
-        D1 = np.array(input_dataframe)
-        D1 = D1/D1.sum()
-        cm = np.sum(D1, axis = 0)
-        col_keep = cm != 0
-        rm = np.sum(D1, axis = 1)
-        row_keep = rm != 0
-        rc = np.outer(rm[row_keep], cm[col_keep])
-        P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
-        P = pd.DataFrame(P, index = input_dataframe.index[row_keep], columns = input_dataframe.columns[col_keep])
-        self.P = P.loc[self.subcluster_points.index, :]
-          
+        if transform:
+
+            D1 = np.array(input_dataframe)
+            D1 = D1/D1.sum()
+            cm = np.sum(D1, axis = 0)
+            col_keep = cm != 0
+            rm = np.sum(D1, axis = 1)
+            row_keep = rm != 0
+            rc = np.outer(rm[row_keep], cm[col_keep])
+            P = (D1[row_keep, :][:, col_keep] - rc)/np.sqrt(rc)
+            P = pd.DataFrame(P, index = input_dataframe.index[row_keep], columns = input_dataframe.columns[col_keep])
+            self.P = P.loc[self.subcluster_points.index, :]
+
+        else:
+            self.P = input_dataframe.loc[self.subcluster_points.index, :]
+            
     def save(self, 
              path, 
              membership_all = True, 
-             subcluster_points = True,
-             subcluster_similarity = True, 
+             exemplars = True,
+             exemplar_similarity_matrix = True, 
              #lgof = True, 
-             cell_exemplar_points = True
+             cell_exemplar_transform = True
              ):
         """
         Save R-friendly output
@@ -787,29 +791,29 @@ class Cluster:
             String indicating path to save directory
         membership_all : bool
             Boolean indicating whether to save membership_all output
-        subcluster_points : bool
-            Boolean indicating whether to save subcluster_points output
-        subcluster_similarity : bool
-            Boolean indicating whether to save subcluster_similarity output
-        lgof : bool
-            Boolean indicating whether to save local goodness of fit matrix
+        exemplars : bool
+            Boolean indicating whether to save data frame of exemplar points 
+        exemplar_similarity_matrix : bool
+            Boolean indicating whether to save exemplar_similarity_matrix output
+        cell_exemplar_transform : bool
+            Boolean indicating whether to save the DataFrame of transformed exemplar cells extracted from raw input data matrix
         """
 
         if membership_all:
             self.membership_all.to_csv(path + 'membership_all.txt.gz', index_label = 'ID')
        
-        if subcluster_points:
-            self.subcluster_points.to_csv(path + 'subcluster_points.txt.gz', index_label = 'ID')
+        if exemplars:
+            self.subcluster_points.to_csv(path + 'exemplars.txt.gz', index_label = 'ID')
 
-        if subcluster_similarity:
-            self.subcluster_similarity.to_csv(path + 'subcluster_similarity.txt.gz', index_label = 'ID')
-            self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
+        if exemplar_similarity_matrix:
+            self.subcluster_similarity.to_csv(path + 'exemplar_similarity_matrix.txt.gz', index_label = 'ID')
+            #self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
 
         #if lgof and hasattr(self, 'lgof'):
         #    self.lgof[0].to_csv(path + 'lgof.txt.gz', index_label = 'ID')
 
-        if cell_exemplar_points and hasattr(self, 'cell_exemplar_points'):
-            self.P.to_csv(path + 'cell_exemplar_points.txt.gz', index_label = 'ID')
+        if cell_exemplar_transform and hasattr(self, 'cell_exemplar_transform'):
+            self.P.to_csv(path + 'cell_exemplar_transform.txt.gz', index_label = 'ID')
 
 ########################################################
 class SpecificityNetwork:
