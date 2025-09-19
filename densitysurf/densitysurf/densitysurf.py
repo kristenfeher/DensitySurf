@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import binom
 
 #__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
-__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+__all__ = ['ca_transform', 'NN_density_cluster', 'reconstruct', 'directory_structure', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
 
 # def spherical_transform(X):
@@ -261,7 +261,7 @@ class Transform:
     save(path, svd = True, cell_coord = True, gene_coord = True, cell_umap = True, gene_umap = True, goodness_of_fit = True)
         Saves output in R-friendly format
     """
-    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True): #input_dataframe must be pd.DataFrame
+    def __init__(self, input_dataframe: pd.DataFrame, ncomps: int = 50, n_iter: int = 10, n_oversamples: int = 50, transform: bool = True, sample_id: str = '', sample_id_sep = '_'): #input_dataframe must be pd.DataFrame
         """
         Parameters
         ----------
@@ -278,6 +278,16 @@ class Transform:
         goodness_of_fit : bool
             Boolean indicating whether to create goodness of fit statistics. 
         """
+
+        if isinstance(sample_id, str):
+            if sample_id != '':
+                if isinstance(sample_id_sep, str):
+                    input_dataframe.columns = input_dataframe.columns.astype(str) + sample_id_sep + sample_id
+                else:
+                    raise TypeError("sample_id_sep must be a string")
+            else:
+                raise TypeError("sample_id must be a string")
+
         self.col_names = input_dataframe.columns
         self.row_names = input_dataframe.index
 
