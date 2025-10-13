@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import binom
 
 #__all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
-__all__ = ['ca_transform', 'NN_density_cluster', 'reconstruct', 'directory_structure', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
+__all__ = ['ca_transform', 'NN_density_cluster', 'reconstruct',  'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
 
 # def spherical_transform(X):
@@ -98,36 +98,45 @@ def NN_density_cluster(coords: pd.DataFrame, K_nn: int, p: float = 2, metric : s
         The second element of the list are the highest density points of each cluster.
     """
 
-    NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1, p = p, metric = metric)
-    NN.fit(coords)
-    dist, ind = NN.kneighbors(coords)
-    mindist = np.min(dist[dist > 0])  # some cells have exactly the same profile thus sometimes the Kth NND can be zero. 
-    dist[dist == 0] = mindist
-    rho = 1/dist[:, K_nn-1]
+    if K_nn > 1:
+        NN = NearestNeighbors(n_neighbors=K_nn, n_jobs=-1)
+        NN.fit(coords)
+        dist, ind = NN.kneighbors(coords)
+        mindist = np.min(dist[dist > 0])  # some cells have exactly the same profile thus sometimes the Kth NND can be zero. 
+        dist[dist == 0] = mindist
+        rho = 1/dist[:, K_nn-1]
 
-    B = [NPN(I, ind, dist, rho) for I in range(0, ind.shape[0])]
-    bigG = [] #path to densest node
-    for n in range(0, len(B)):
-        g = B[n]
-        G = [g]
-        while g != -1:
-            g = B[g]
-            G.append(g)
-        bigG.append(G)
+        B = [NPN(I, ind, dist, rho) for I in range(0, ind.shape[0])]
+        bigG = [] #path to densest node
+        for n in range(0, len(B)):
+            g = B[n]
+            G = [g]
+            while g != -1:
+                g = B[g]
+                G.append(g)
+            bigG.append(G)
 
-    bigG_mem = pd.DataFrame([bigG[k][-2] if len(bigG[k]) > 1 else k for k in range(0, len(bigG))], index = coords.index, columns=['membership']) 
-    # # get coords corresponding to densest nodes
-    exemplars = coords.iloc[np.unique(bigG_mem)]
+        bigG_mem = pd.DataFrame([bigG[k][-2] if len(bigG[k]) > 1 else k for k in range(0, len(bigG))], index = coords.index, columns=['membership']) 
+        # # get coords corresponding to densest nodes
+        exemplars = coords.iloc[np.unique(bigG_mem)]
 
-    DF1 = bigG_mem.loc[exemplars.index] # column 'membership' is numerical index of densest points, dataframe index is the points' IDs
-    DF1.columns = ['membership']
-    DF2 = pd.DataFrame(exemplars.groupby(list(exemplars)).ngroup(), columns = ['duplicate']) # column 'duplicate' labels densest points according to whether they are identical to each other
-    exemplars = DF1.merge(DF2, right_index=True, left_index = True).merge(exemplars, right_index = True, left_index = True) # merge the information into one dataframe
+        DF1 = bigG_mem.loc[exemplars.index] # column 'membership' is numerical index of densest points, dataframe index is the points' IDs
+        DF1.columns = ['membership']
+        DF2 = pd.DataFrame(exemplars.groupby(list(exemplars)).ngroup(), columns = ['duplicate']) # column 'duplicate' labels densest points according to whether they are identical to each other
+        exemplars = DF1.merge(DF2, right_index=True, left_index = True).merge(exemplars, right_index = True, left_index = True) # merge the information into one dataframe
 
-    subcluster_membership = bigG_mem.replace(to_replace=list(exemplars['membership']), value = list(exemplars['duplicate']))
-    density = pd.DataFrame({"local_density": rho}, index = coords.index)
+        subcluster_membership = bigG_mem.replace(to_replace=list(exemplars['membership']), value = list(exemplars['duplicate']))
+        density = pd.DataFrame({"local_density": rho}, index = coords.index)
+
+    if K_nn == 1:
+        subcluster_membership = pd.DataFrame({'membership': range(0, coords.shape[0])}, index = coords.index)
+        exemplars = coords.iloc[range(0, coords.shape[0])]
+        exemplars.insert(0, 'membership', range(0, coords.shape[0]))
+        exemplars.insert(0, 'duplicate', range(0, coords.shape[0]))
+        density = pd.DataFrame({'local_density': [None]*coords.shape[0]}, index = coords.index)
 
     return(list((subcluster_membership, exemplars, density)))
+
 
 def veclen(x):
     """A helper function to obtain the length of a vector"""
@@ -222,8 +231,8 @@ def local_gof(membership_matrix, coordinate_matrix, ncomp:int = 3):
         clus_ID = membership_matrix.loc[membership_matrix['subcluster'] == i].index
         subcluster_proj.append(proj_dist_matrix.loc[clus_ID].iloc[:, i])
 
-    subcluster_proj = pd.DataFrame({'clus': pd.concat(subcluster_proj)})
-    gof_df = pd.DataFrame({'mean': proj_mean, 'max': proj_max})
+    subcluster_proj = pd.DataFrame({'self_gof': pd.concat(subcluster_proj)})
+    gof_df = pd.DataFrame({'mean_gof': proj_mean, 'max_gof': proj_max})
     gof_df = gof_df.join(subcluster_proj)
 
     return([gof_df, sval_list])
@@ -476,9 +485,9 @@ class Transform:
         pd.DataFrame({'col_keep':self.col_keep}, index = self.col_names).to_csv(path + 'col_keep.txt', index_label = 'ID')
         
         if svd:             
-            self.svd0.to_csv(path + 'svd0.txt.gz')
+            self.svd0.to_csv(path + 'svd0.txt.gz', index_label = 'ID')
             self.svd1.to_csv(path + 'svd1.txt', index = False)            
-            self.svd2.to_csv(path + 'svd2.txt.gz')
+            self.svd2.to_csv(path + 'svd2.txt.gz', index_label = 'ID')
             
         if cell_coord:
             self.cell_coord.to_csv(path + 'cell_coord.txt.gz', index_label = 'ID')
@@ -529,6 +538,20 @@ class Transform:
             
             gof_figure(self.gp_cell, path + 'reconstruct_err_cell.png')
             gof_figure(self.gp_gene, path + 'reconstruct_err_gene.png')
+
+    def pickle_save(self, path):
+            file = open(path + 'transform.pkl', 'wb')
+            pickle.dump(self, file)
+            file.close()
+
+    @classmethod
+    def pickle_load(cls, path):
+        with open(path + 'transform.pkl', 'rb') as f:
+            loadobj = pickle.load(f)
+        return loadobj
+
+    
+
     
 #################################################
 class Cluster:
@@ -719,6 +742,7 @@ class Cluster:
         if self.mode == 'cells':
             if self.ncomp_clus == 0:
                 self.lgof = local_gof(self.membership_all, coords.cell_coord, ncomp)
+                self.membership_all = self.membership_all.merge(self.lgof[0], left_index=True, right_index=True)
             elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.cell_coord.shape[1]:
                 ca_comps = np.transpose((np.transpose(np.array(coords.svd0)) * np.array(coords.svd1)))
                 ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
@@ -726,14 +750,15 @@ class Cluster:
                 idx = coords.row_names[coords.row_keep]
                 cell_coord = spherical_transform(ca_comps)
                 cell_coord = pd.DataFrame(cell_coord, index = idx, columns = cnames)
-                lgof = local_gof(self.membership_all, cell_coord, ncomp)
-                self.membership_all = self.membership_all.merge(lgof[0], left_index=True, right_index=True)
+                self.lgof = local_gof(self.membership_all, cell_coord, ncomp)
+                self.membership_all = self.membership_all.merge(self.lgof[0], left_index=True, right_index=True)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in cell_coord")
                 
         if self.mode == 'genes' :
             if self.ncomp_clus == 0:
                 self.lgof = local_gof(self.membership_all, coords.gene_coord, ncomp)
+                self.membership_all = self.membership_all.merge(self.lgof[0], left_index=True, right_index=True)
             elif self.ncomp_clus > 1 and self.ncomp_clus <= coords.gene_coord.shape[1]:
                 ca_comps = np.transpose((np.transpose(np.array(coords.svd2)) * np.array(coords.svd1)))
                 ca_comps = ca_comps[:, range(0, self.ncomp_clus)]
@@ -741,8 +766,8 @@ class Cluster:
                 idx = coords.col_names[coords.col_keep]
                 gene_coord = spherical_transform(ca_comps)
                 gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
-                lgof = local_gof(self.membership_all, gene_coord, ncomp)
-                self.membership_all = self.membership_all.merge(lgof[0], left_index=True, right_index=True)
+                self.lgof = local_gof(self.membership_all, gene_coord, ncomp)
+                self.membership_all = self.membership_all.merge(self.lgof[0], left_index=True, right_index=True)
             else: 
                 raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
             
@@ -754,7 +779,10 @@ class Cluster:
         ----------
         input_dataframe: pd.DataFrame
             The raw data used to create cell clustering
+        transform: bool
+            True if input_dataframe should be pre-transformed, False if input_dataframe is pre-transformed.
         """
+
         if self.mode == 'genes':
             print("Method only valid for cells")
 
@@ -779,7 +807,6 @@ class Cluster:
              membership_all = True, 
              exemplars = True,
              exemplar_similarity_matrix = True, 
-             #lgof = True, 
              cell_exemplar_transform = True
              ):
         """
@@ -807,12 +834,9 @@ class Cluster:
 
         if exemplar_similarity_matrix:
             self.subcluster_similarity.to_csv(path + 'exemplar_similarity_matrix.txt.gz', index_label = 'ID')
-            #self.subcluster_similarity_prune.to_csv(path + 'subcluster_similarity_prune.txt.gz', index_label = 'ID')
+            self.subcluster_similarity_prune.to_csv(path + 'exemplar_similarity_matrix_prune.txt.gz', index_label = 'ID')
 
-        #if lgof and hasattr(self, 'lgof'):
-        #    self.lgof[0].to_csv(path + 'lgof.txt.gz', index_label = 'ID')
-
-        if cell_exemplar_transform and hasattr(self, 'cell_exemplar_transform'):
+        if cell_exemplar_transform and hasattr(self, 'P'):
             self.P.to_csv(path + 'cell_exemplar_transform.txt.gz', index_label = 'ID')
 
 ########################################################
@@ -822,7 +846,7 @@ class SpecificityNetwork:
 
     Attributes
     ----------
-    bip_graph : pd.DataFrame
+    spec_network : pd.DataFrame
         A bipartite graph representing the association between gene subclusters and cell subcluster
     virtual_stain : pd.DataFrame
         Creates a representative value of each gene cluster for each cell
@@ -914,8 +938,8 @@ class SpecificityNetwork:
             #gc = gc.iloc[:, range(0, genes.ncomp_clus)]
         else:
             raise IndexError("ncomp_clus is larger than the number of columns in gene_coord")
-        cnames = ['c' + str(K) for K in cells.subcluster_points['subcluster']]
-        gnames = ['g' + str(K) for K in genes.subcluster_points['subcluster']]
+        cnames = ['c_' + str(K) for K in cells.subcluster_points['subcluster']]
+        gnames = ['g_' + str(K) for K in genes.subcluster_points['subcluster']]
 
         core_dotprod = np.matmul(np.array(cc), np.transpose(np.array(gc)))
 
@@ -923,7 +947,16 @@ class SpecificityNetwork:
         bpg1 = np.vstack((np.zeros((s1, s1), dtype = int), np.transpose(core_dotprod)))
         s2 = core_dotprod.shape[1]
         bpg2 = np.vstack((core_dotprod, np.zeros((s2, s2), dtype = int)))
-        self.bip_graph = pd.DataFrame(np.hstack((bpg1, bpg2)), index = np.concatenate([cnames, gnames]), columns = np.concatenate([cnames, gnames]))
+        self.spec_network = pd.DataFrame(np.hstack((bpg1, bpg2)), index = np.concatenate([cnames, gnames]), columns = np.concatenate([cnames, gnames]))
+
+        SN_max = pd.DataFrame({'max_sim': self.spec_network.max(axis = 0)})
+        s = SN_max.index
+        SN_max.index = range(0, SN_max.shape[0])
+        b = pd.DataFrame([x.split('_') for x in s], columns = ['w', 'subcluster'])
+        SN_max = pd.concat([SN_max, b], axis = 1,  join = 'inner')
+        self.max_contribution_cell = SN_max.loc[SN_max['w'] == 'c']
+        self.max_contribution_gene = SN_max.loc[SN_max['w'] == 'g']
+
 
         core_dotprod[core_dotprod < similarity_threshold] = 0
         VS = [cells.membership_all['subcluster'].replace(to_replace = list(cells.subcluster_points['subcluster']), value = list(core_dotprod[:, k])) for k in range(0, core_dotprod.shape[1])]
@@ -953,12 +986,17 @@ class SpecificityNetwork:
 
     def save(self, 
         path, 
-        bip_graph = True, 
+        biomarker_specificity_network = True, 
+        max_contribution = True,
         virtual_stain = True
         ):
 
-        if bip_graph:
-            self.bip_graph.to_csv(path + 'bip_graph.txt.gz', index_label = 'ID')
+        if biomarker_specificity_network:
+            self.spec_network.to_csv(path + 'biomarker_specificity_network.txt.gz', index_label = 'ID')
+
+        if max_contribution:
+            self.max_contribution_cell.to_csv(path + 'max_contribution_cell.txt.gz', index_label = 'ID')
+            self.max_contribution_gene.to_csv(path + 'max_contribution_gene.txt.gz', index_label = 'ID')
 
         if virtual_stain:
             self.virtual_stain.to_csv(path + 'virtual_stain.txt.gz', index_label = 'ID')
