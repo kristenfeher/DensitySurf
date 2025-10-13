@@ -288,6 +288,10 @@ class Transform:
             Boolean indicating whether to create goodness of fit statistics. 
         """
 
+        s = input_dataframe.shape
+        if ncomps > s[0] or ncomps > s[1]:
+            raise ValueError("ncomps argument must be less than the smallest dimension of the input_dataframe argument")
+
         self.col_names = input_dataframe.columns
         self.row_names = input_dataframe.index
 
