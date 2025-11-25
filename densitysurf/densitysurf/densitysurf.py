@@ -164,7 +164,7 @@ def var_expl(svd0, svd1, svd2, i): # variance explained over rows, columns
     Lrow = np.sum(P_reconstruct**2, axis = 1)**0.5
     return([Lcol, Lrow])
 
-def reconstruct(path_name, pickle = False): # give option to use pickled Transform object
+def reconstruct(path_name, ndim: int = 0,pickle = False): # give option to use pickled Transform object
     """A helper function to create matrix from saved matrix decomposition"""
     if not pickle:
         s0 = pd.read_csv(path_name + 'svd0.txt.gz')
@@ -181,7 +181,13 @@ def reconstruct(path_name, pickle = False): # give option to use pickled Transfo
     s0 = s0.drop(s0.columns[0], axis = 1)
     s2.index = s2.iloc[:, 0]
     s2 = s2.drop(s2.columns[0], axis = 1)
-    P = np.matmul(np.matmul(np.array(s0), np.diag(np.transpose(np.array(s1))[0, ])), np.transpose(np.array(s2)))
+    if ndim != 0:
+        if ndim <= s0.shape[1]:
+            P = np.matmul(np.matmul(np.array(s0)[:, range(0, ndim)], np.diag(np.transpose(np.array(s1))[0, range(0, ndim)])), np.transpose(np.array(s2)[:, range(0, ndim)]))
+        else:
+            raise IndexError("ndim must be less than or equal to the number of saved components")
+    else:
+        P = np.matmul(np.matmul(np.array(s0), np.diag(np.transpose(np.array(s1))[0, ])), np.transpose(np.array(s2)))
     P = pd.DataFrame(P, index = s0.index, columns = s2.index)
     return(P)
 
@@ -360,7 +366,7 @@ class Transform:
         self.gene_coord = pd.DataFrame(gene_coord, index = idx, columns = cnames)
 
                
-    def goodness_of_fit(self, N: int = 10, min_percent = sum([list(range(1, 20)), list(range(20, 100, 10)), [95, 99]], [])):
+    def goodness_of_fit(self, N: int = 10, min_percent = list([20, 40, 60, 80])):#min_percent = sum([list(range(1, 20)), list(range(20, 100, 10)), [95, 99]], [])):
         """
         Parameters
         ----------
@@ -368,10 +374,13 @@ class Transform:
             List of values on the interval (0, 100) indicating minimum percentages of variance for reconstruction error plot
         """
 
-        L = list(range(0, self.ncomps, int(np.floor((self.ncomps)/N))))
-        if L[-1] != self.ncomps:
-            L.append(self.ncomps)
-        L.pop(0)
+        # L = list(range(0, self.ncomps, int(np.floor((self.ncomps)/N))))
+        # if L[-1] != self.ncomps:
+        #     L.append(self.ncomps)
+        # L.pop(0)
+
+        L = list([list(range(0, 10)), list(range(10, self.ncomps, int(np.floor((self.ncomps)/N))))])
+        L = np.concatenate(L).tolist()
         VE = [var_expl(self.svd0, self.svd1, self.svd2, i) for i in [i for i in L]]
         self.gof_gene = np.transpose(pd.DataFrame([x[0] for x in VE]))
         self.gof_cell = np.transpose(pd.DataFrame([x[1] for x in VE]))

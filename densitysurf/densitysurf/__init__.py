@@ -3,6 +3,9 @@
 # __all__ = ['NN_density_cluster', 'reconstruct', 'directory_structure', 'MultiSampleConcat', 'Workflow', 'Transform', 'Cluster', 'SpecificityNetwork', 'NeighbourhoodFlow']
 
 from densitysurf.densitysurf import *
+from densitysurf.file_structures import *
+from densitysurf.extra_functions import *
+
 # (
 #     NN_density_cluster as NN_density_cluster,
 #     reconstruct as reconstruct,
